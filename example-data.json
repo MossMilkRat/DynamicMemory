@@ -1,0 +1,135 @@
+{
+  "version": "1.0",
+  "description": "Example of how memory data is structured and stored in chat metadata",
+  "chatMetadata": {
+    "memoryTracker": {
+      "memories": [
+        {
+          "summary": "Character revealed they've been keeping a secret about their past for years",
+          "importance": 0.95,
+          "emotion": "anxious, vulnerable",
+          "keywords": ["secret", "past", "revelation", "trust"],
+          "relationship": {
+            "type": "trust",
+            "change": "improved"
+          },
+          "continuityNote": "This secret should affect future conversations about their history",
+          "timestamp": 1729699200000,
+          "source": "character",
+          "messageIndex": 42
+        },
+        {
+          "summary": "User and character shared a quiet moment under the stars",
+          "importance": 0.75,
+          "emotion": "peaceful, romantic",
+          "keywords": ["stars", "quiet moment", "bonding", "intimacy"],
+          "relationship": {
+            "type": "romance",
+            "change": "improved"
+          },
+          "continuityNote": "This location (stargazing spot) is now a meaningful place for both",
+          "timestamp": 1729702800000,
+          "source": "character",
+          "messageIndex": 58
+        },
+        {
+          "summary": "Character expressed frustration about being misunderstood",
+          "importance": 0.60,
+          "emotion": "frustrated, hurt",
+          "keywords": ["misunderstanding", "frustration", "communication"],
+          "relationship": {
+            "type": "general",
+            "change": "worsened"
+          },
+          "continuityNote": "Character is still sensitive about this topic",
+          "timestamp": 1729706400000,
+          "source": "character",
+          "messageIndex": 73
+        }
+      ],
+      "relationships": {
+        "trust": {
+          "level": 0.45,
+          "history": [
+            {
+              "timestamp": 1729699200000,
+              "change": "improved"
+            },
+            {
+              "timestamp": 1729702800000,
+              "change": "improved"
+            }
+          ],
+          "lastUpdate": 1729702800000
+        },
+        "romance": {
+          "level": 0.60,
+          "history": [
+            {
+              "timestamp": 1729702800000,
+              "change": "improved"
+            },
+            {
+              "timestamp": 1729706400000,
+              "change": "improved"
+            }
+          ],
+          "lastUpdate": 1729706400000
+        },
+        "general": {
+          "level": 0.30,
+          "history": [
+            {
+              "timestamp": 1729706400000,
+              "change": "worsened"
+            }
+          ],
+          "lastUpdate": 1729706400000
+        }
+      },
+      "timeline": [
+        {
+          "timestamp": 1729699200000,
+          "messageIndex": 42,
+          "summary": "Character revealed they've been keeping a secret about their past for years",
+          "importance": 0.95
+        },
+        {
+          "timestamp": 1729702800000,
+          "messageIndex": 58,
+          "summary": "User and character shared a quiet moment under the stars",
+          "importance": 0.75
+        },
+        {
+          "timestamp": 1729706400000,
+          "messageIndex": 73,
+          "summary": "Character expressed frustration about being misunderstood",
+          "importance": 0.60
+        }
+      ],
+      "emotionalStates": {
+        "current": "frustrated, hurt",
+        "history": [
+          {
+            "timestamp": 1729699200000,
+            "emotion": "anxious, vulnerable"
+          },
+          {
+            "timestamp": 1729702800000,
+            "emotion": "peaceful, romantic"
+          },
+          {
+            "timestamp": 1729706400000,
+            "emotion": "frustrated, hurt"
+          }
+        ]
+      }
+    }
+  },
+  "notes": {
+    "storage": "All data is stored in the chat's metadata and persists across sessions",
+    "access": "Data can be accessed via SillyTavern.getContext().chatMetadata.memoryTracker",
+    "export": "Use the Export button or /memory-export command to save this data to a JSON file",
+    "privacy": "All data is stored locally on your machine, never sent to external services"
+  }
+}
