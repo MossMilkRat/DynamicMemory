@@ -289,3 +289,4 @@ For issues, questions, or feature requests:
 ---
 
 **Note**: This extension requires an API that supports structured outputs (JSON schema) for optimal functionality. It will work with any modern LLM API but results may vary.
+ 
