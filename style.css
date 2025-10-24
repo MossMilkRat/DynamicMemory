@@ -175,6 +175,52 @@
     color: var(--SmartThemeBodyColor, #999);
     flex-wrap: wrap;
     gap: 8px;
+    position: relative;
+}
+
+.memory-tracker-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.memory-tracker-edit-btn,
+.memory-tracker-delete-btn {
+    background: transparent;
+    border: 1px solid rgba(100, 100, 100, 0.3);
+    color: #999;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+}
+
+.memory-tracker-edit-btn {
+    border-color: rgba(0, 153, 255, 0.3);
+    color: #0099ff;
+}
+
+.memory-tracker-edit-btn:hover {
+    background: rgba(0, 153, 255, 0.2);
+    border-color: #0099ff;
+    color: #33aaff;
+}
+
+.memory-tracker-delete-btn {
+    border-color: rgba(255, 68, 68, 0.3);
+    color: #ff4444;
+}
+
+.memory-tracker-delete-btn:hover {
+    background: rgba(255, 68, 68, 0.2);
+    border-color: #ff4444;
+    color: #ff6666;
+}
+
+.memory-tracker-edit-btn i,
+.memory-tracker-delete-btn i {
+    font-size: 0.9em;
 }
 
 .memory-tracker-character-badge {

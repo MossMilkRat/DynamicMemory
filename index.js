@@ -21,6 +21,10 @@
         showNotifications: true,
         trackingDepth: 'detailed', // 'basic', 'detailed', 'comprehensive'
         groupChatMode: 'auto', // 'auto', 'combined', 'per-character'
+        batchSize: 5, // Process N messages in parallel
+        analysisDelay: 100, // Delay between batches (ms)
+        skipLowImportance: false, // Skip messages below threshold
+        importanceThreshold: 0.3, // Minimum importance to save
     });
 
     let extensionSettings = {};
@@ -135,6 +139,28 @@
                                 <small>Per-Character mode tracks memories separately for each group member</small>
                             </div>
                             
+                            <h4>⚡ Performance Optimization</h4>
+                            
+                            <label for="memory-tracker-batch-size">Batch Size: <span id="batch-size-value">${extensionSettings.batchSize || 5}</span></label>
+                            <input type="range" id="memory-tracker-batch-size" min="1" max="10" step="1" value="${extensionSettings.batchSize || 5}">
+                            <div class="memory-tracker-hint">
+                                <small>Process N messages in parallel (higher = faster but more API load)</small>
+                            </div>
+                            
+                            <label>
+                                <input type="checkbox" id="memory-tracker-skip-low-importance" ${extensionSettings.skipLowImportance ? 'checked' : ''}>
+                                Skip low-importance messages
+                            </label>
+                            <div class="memory-tracker-hint">
+                                <small>Don't save memories with importance below threshold (faster analysis)</small>
+                            </div>
+                            
+                            <label for="memory-tracker-importance-threshold">Importance Threshold: <span id="threshold-value">${extensionSettings.importanceThreshold || 0.3}</span></label>
+                            <input type="range" id="memory-tracker-importance-threshold" min="0.1" max="0.8" step="0.05" value="${extensionSettings.importanceThreshold || 0.3}" ${!extensionSettings.skipLowImportance ? 'disabled' : ''}>
+                            <div class="memory-tracker-hint">
+                                <small>Only save memories above this importance level</small>
+                            </div>
+                            
                             <div class="memory-tracker-buttons">
                                 <button id="memory-tracker-view-memories" class="menu_button">
                                     <i class="fa-solid fa-brain"></i>
@@ -163,6 +189,10 @@
                                 <button id="memory-tracker-export" class="menu_button">
                                     <i class="fa-solid fa-download"></i>
                                     Export Data
+                                </button>
+                                <button id="memory-tracker-clear-all" class="menu_button" style="background: rgba(255, 68, 68, 0.1); border-color: rgba(255, 68, 68, 0.3); color: #ff4444;">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                    Clear All Memories
                                 </button>
                             </div>
                             <div id="memory-tracker-analysis-status" class="memory-tracker-analysis-status" style="display: none;">
@@ -264,6 +294,27 @@
             extensionSettings.groupChatMode = $(this).val();
             saveSettings();
         });
+        
+        $('#memory-tracker-batch-size').on('input', function() {
+            const value = $(this).val();
+            $('#batch-size-value').text(value);
+            extensionSettings.batchSize = parseInt(value);
+            saveSettings();
+        });
+        
+        $('#memory-tracker-skip-low-importance').on('change', function() {
+            const checked = $(this).is(':checked');
+            extensionSettings.skipLowImportance = checked;
+            $('#memory-tracker-importance-threshold').prop('disabled', !checked);
+            saveSettings();
+        });
+        
+        $('#memory-tracker-importance-threshold').on('input', function() {
+            const value = $(this).val();
+            $('#threshold-value').text(value);
+            extensionSettings.importanceThreshold = parseFloat(value);
+            saveSettings();
+        });
 
         $('#memory-tracker-view-memories').on('click', function() {
             openMemoryPanel('memories');
@@ -275,6 +326,10 @@
 
         $('#memory-tracker-export').on('click', function() {
             exportMemoryData();
+        });
+        
+        $('#memory-tracker-clear-all').on('click', function() {
+            clearAllMemories();
         });
 
         $('#memory-tracker-analyze-existing').on('click', function() {
@@ -792,6 +847,200 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
     }
 
     /**
+     * Edit a specific memory
+     */
+    function editMemory(memoryIndex) {
+        const context = SillyTavern.getContext();
+        const chatMetadata = context.chatMetadata;
+        
+        if (!chatMetadata.memoryTracker || !chatMetadata.memoryTracker.memories) {
+            return;
+        }
+        
+        const memories = chatMetadata.memoryTracker.memories;
+        
+        if (memoryIndex < 0 || memoryIndex >= memories.length) {
+            console.error('[Dynamic Memory Tracker] Invalid memory index:', memoryIndex);
+            return;
+        }
+        
+        const memory = memories[memoryIndex];
+        
+        // Create edit dialog
+        const dialogHtml = `
+            <div id="memory-edit-dialog" class="memory-manual-dialog">
+                <div class="memory-manual-content">
+                    <h3>Edit Memory</h3>
+                    
+                    <label for="edit-memory-summary">Summary:</label>
+                    <textarea id="edit-memory-summary" rows="3" placeholder="Brief summary of the memory">${memory.summary}</textarea>
+                    
+                    <label for="edit-memory-importance">Importance: <span id="edit-importance-value">${memory.importance}</span></label>
+                    <input type="range" id="edit-memory-importance" min="0" max="1" step="0.05" value="${memory.importance}">
+                    
+                    <label for="edit-memory-emotion">Emotion:</label>
+                    <input type="text" id="edit-memory-emotion" placeholder="happy, sad, anxious, etc." value="${memory.emotion}">
+                    
+                    <label for="edit-memory-keywords">Keywords (comma-separated):</label>
+                    <input type="text" id="edit-memory-keywords" placeholder="keyword1, keyword2, keyword3" value="${memory.keywords.join(', ')}">
+                    
+                    <label for="edit-memory-note">Continuity Note (optional):</label>
+                    <textarea id="edit-memory-note" rows="2" placeholder="Important details to remember">${memory.continuityNote || ''}</textarea>
+                    
+                    <div class="manual-buttons">
+                        <button id="edit-save-btn" class="menu_button">Save Changes</button>
+                        <button id="edit-cancel-btn" class="menu_button">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        $('#memory-edit-dialog').remove();
+        $('body').append(dialogHtml);
+        $('#memory-edit-dialog').fadeIn(200);
+        
+        // Update importance display
+        $('#edit-memory-importance').on('input', function() {
+            $('#edit-importance-value').text($(this).val());
+        });
+        
+        // Save button
+        $('#edit-save-btn').on('click', async function() {
+            const updatedMemory = {
+                ...memory,
+                summary: $('#edit-memory-summary').val().trim(),
+                importance: parseFloat($('#edit-memory-importance').val()),
+                emotion: $('#edit-memory-emotion').val().trim(),
+                keywords: $('#edit-memory-keywords').val().split(',').map(k => k.trim()).filter(k => k.length > 0),
+                continuityNote: $('#edit-memory-note').val().trim()
+            };
+            
+            // Validate
+            if (!updatedMemory.summary) {
+                showNotification('Summary cannot be empty');
+                return;
+            }
+            
+            // Update memory
+            memories[memoryIndex] = updatedMemory;
+            
+            // Save metadata
+            await context.saveMetadata();
+            
+            showNotification('Memory updated');
+            
+            // Close dialog
+            $('#memory-edit-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+            
+            // Refresh UI
+            renderMemories();
+        });
+        
+        // Cancel button
+        $('#edit-cancel-btn').on('click', function() {
+            $('#memory-edit-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+        });
+    }
+
+    /**
+     * Clear all memories
+     */
+    async function clearAllMemories() {
+        const context = SillyTavern.getContext();
+        const chatMetadata = context.chatMetadata;
+        
+        if (!chatMetadata.memoryTracker || !chatMetadata.memoryTracker.memories) {
+            showNotification('No memories to clear');
+            return;
+        }
+        
+        const count = chatMetadata.memoryTracker.memories.length;
+        
+        if (count === 0) {
+            showNotification('No memories to clear');
+            return;
+        }
+        
+        // Confirm deletion
+        const confirmed = confirm(
+            `Delete ALL ${count} memories?\n\nThis will:\n• Remove all memories\n• Clear timeline\n• Reset relationships\n• Reset emotional states\n\nThis cannot be undone!`
+        );
+        
+        if (!confirmed) {
+            return;
+        }
+        
+        // Clear everything
+        chatMetadata.memoryTracker = {
+            memories: [],
+            relationships: {},
+            timeline: [],
+            emotionalStates: {},
+            characterMemories: {}
+        };
+        
+        // Save metadata
+        await context.saveMetadata();
+        
+        showNotification(`Cleared ${count} memories`);
+        
+        // Refresh UI
+        renderMemories();
+    }
+
+    /**
+     * Delete a specific memory
+     */
+    async function deleteMemory(memoryIndex) {
+        const context = SillyTavern.getContext();
+        const chatMetadata = context.chatMetadata;
+        
+        if (!chatMetadata.memoryTracker || !chatMetadata.memoryTracker.memories) {
+            return;
+        }
+        
+        const memories = chatMetadata.memoryTracker.memories;
+        
+        if (memoryIndex < 0 || memoryIndex >= memories.length) {
+            console.error('[Dynamic Memory Tracker] Invalid memory index:', memoryIndex);
+            return;
+        }
+        
+        const memory = memories[memoryIndex];
+        
+        // Confirm deletion
+        const confirmed = confirm(
+            `Delete this memory?\n\n"${memory.summary.substring(0, 100)}${memory.summary.length > 100 ? '...' : ''}"\n\nThis cannot be undone.`
+        );
+        
+        if (!confirmed) {
+            return;
+        }
+        
+        // Remove from memories array
+        memories.splice(memoryIndex, 1);
+        
+        // Also remove from timeline if it exists
+        if (chatMetadata.memoryTracker.timeline) {
+            chatMetadata.memoryTracker.timeline = chatMetadata.memoryTracker.timeline.filter(
+                item => item.summary !== memory.summary || item.timestamp !== memory.timestamp
+            );
+        }
+        
+        // Save metadata
+        await context.saveMetadata();
+        
+        showNotification('Memory deleted');
+        
+        // Refresh UI
+        renderMemories();
+    }
+
+    /**
      * Render memories in the panel
      */
     function renderMemories() {
@@ -821,7 +1070,7 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
                 : '';
             
             const memoryHtml = `
-                <div class="memory-tracker-item" data-importance="${memory.importance}">
+                <div class="memory-tracker-item" data-importance="${memory.importance}" data-memory-index="${index}">
                     <div class="memory-tracker-item-header">
                         ${characterBadge}
                         <span class="memory-tracker-importance" style="opacity: ${memory.importance}">
@@ -829,6 +1078,14 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
                         </span>
                         <span class="memory-tracker-emotion">${memory.emotion}</span>
                         <span class="memory-tracker-date">${new Date(memory.timestamp).toLocaleString()}</span>
+                        <div class="memory-tracker-actions">
+                            <button class="memory-tracker-edit-btn" data-memory-index="${index}" title="Edit this memory">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+                            <button class="memory-tracker-delete-btn" data-memory-index="${index}" title="Delete this memory">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="memory-tracker-item-content">
                         <p class="memory-tracker-summary">${memory.summary}</p>
@@ -840,6 +1097,20 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
                 </div>
             `;
             memoryList.append(memoryHtml);
+        });
+        
+        // Add edit button handlers
+        $('.memory-tracker-edit-btn').on('click', function(e) {
+            e.stopPropagation();
+            const memoryIndex = parseInt($(this).data('memory-index'));
+            editMemory(memoryIndex);
+        });
+        
+        // Add delete button handlers
+        $('.memory-tracker-delete-btn').on('click', function(e) {
+            e.stopPropagation();
+            const memoryIndex = parseInt($(this).data('memory-index'));
+            deleteMemory(memoryIndex);
         });
     }
 
@@ -1797,26 +2068,48 @@ Return ONLY a JSON object (no markdown, no explanation) with this structure:
         
         let processed = 0;
         let newMemories = 0;
-        const batchSize = 5;
+        let skipped = 0;
+        const batchSize = extensionSettings.batchSize || 5;
+        const skipLowImportance = extensionSettings.skipLowImportance || false;
+        const threshold = extensionSettings.importanceThreshold || 0.3;
         
         try {
             for (let i = startIndex; i <= endIndex; i += batchSize) {
-                const batchEnd = Math.min(i + batchSize, endIndex + 1);
-                const batch = chat.slice(i, batchEnd);
+                const batchEnd = Math.min(i + batchSize - 1, endIndex);
+                const batchPromises = [];
                 
-                for (const message of batch) {
-                    const messageIndex = chat.indexOf(message);
+                // Process batch in parallel
+                for (let j = i; j <= batchEnd; j++) {
+                    const message = chat[j];
+                    const messageIndex = j;
                     
                     // Skip if already analyzed
                     const alreadyAnalyzed = chatMetadata.memoryTracker.memories.some(
                         m => m.messageIndex === messageIndex
                     );
                     
-                    if (!alreadyAnalyzed) {
+                    if (alreadyAnalyzed) {
+                        processed++;
+                        skipped++;
+                        continue;
+                    }
+                    
+                    // Process in parallel
+                    const promise = (async () => {
                         const source = message.is_user ? 'user' : 'character';
-                        const memoryData = await extractMemoryFromMessage(message, source);
+                        const characterName = message.name || (message.is_user ? context.name1 : context.name2);
+                        const isGroupChat = context.groupId !== null && context.groupId !== undefined;
+                        
+                        const memoryData = await extractMemoryFromMessage(message, source, characterName, isGroupChat);
                         
                         if (memoryData) {
+                            // Check importance threshold
+                            if (skipLowImportance && memoryData.importance < threshold) {
+                                console.log(`[Dynamic Memory Tracker] Skipping low-importance memory (${memoryData.importance}):`, memoryData.summary.substring(0, 50));
+                                skipped++;
+                                return;
+                            }
+                            
                             memoryData.messageIndex = messageIndex;
                             chatMetadata.memoryTracker.memories.push(memoryData);
                             newMemories++;
@@ -1825,33 +2118,45 @@ Return ONLY a JSON object (no markdown, no explanation) with this structure:
                                 timestamp: message.send_date || Date.now(),
                                 messageIndex: messageIndex,
                                 summary: memoryData.summary,
-                                importance: memoryData.importance
+                                importance: memoryData.importance,
+                                characterName: characterName
                             });
                             
                             if (memoryData.relationship) {
                                 updateRelationship(
                                     chatMetadata.memoryTracker.relationships,
-                                    memoryData.relationship
+                                    memoryData.relationship,
+                                    characterName
                                 );
                             }
                             
                             if (memoryData.emotion && extensionSettings.useEmotionalContext) {
                                 updateEmotionalState(
                                     chatMetadata.memoryTracker.emotionalStates,
-                                    memoryData.emotion
+                                    memoryData.emotion,
+                                    characterName
                                 );
                             }
+                        } else {
+                            skipped++;
                         }
-                    }
+                    })();
                     
-                    processed++;
-                    currentSpan.text(processed);
-                    const progressPercent = (processed / messageCount) * 100;
-                    progressBar.css('width', progressPercent + '%');
+                    batchPromises.push(promise);
                 }
                 
-                if (i + batchSize <= endIndex) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                // Wait for entire batch to complete
+                await Promise.all(batchPromises);
+                
+                // Update progress
+                processed += batchPromises.length;
+                currentSpan.text(processed);
+                const progressPercent = (processed / messageCount) * 100;
+                progressBar.css('width', progressPercent + '%');
+                
+                // Delay between batches
+                if (batchEnd < endIndex) {
+                    await new Promise(resolve => setTimeout(resolve, extensionSettings.analysisDelay || 100));
                 }
             }
             
@@ -1861,8 +2166,9 @@ Return ONLY a JSON object (no markdown, no explanation) with this structure:
             
             showNotification(
                 `Range analysis complete!\n` +
-                `• Processed messages ${startIndex + 1} to ${endIndex + 1}\n` +
+                `• Processed ${processed} messages (${startIndex + 1} to ${endIndex + 1})\n` +
                 `• Created ${newMemories} new memories\n` +
+                `• Skipped ${skipped} (low importance or already analyzed)\n` +
                 `• Total memories: ${chatMetadata.memoryTracker.memories.length}`
             );
             
