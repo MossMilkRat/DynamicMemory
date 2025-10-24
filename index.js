@@ -20,6 +20,7 @@
         useEmotionalContext: true,
         showNotifications: true,
         trackingDepth: 'detailed', // 'basic', 'detailed', 'comprehensive'
+        groupChatMode: 'auto', // 'auto', 'combined', 'per-character'
     });
 
     let extensionSettings = {};
@@ -123,6 +124,16 @@
                                 <option value="detailed" ${extensionSettings.trackingDepth === 'detailed' ? 'selected' : ''}>Detailed</option>
                                 <option value="comprehensive" ${extensionSettings.trackingDepth === 'comprehensive' ? 'selected' : ''}>Comprehensive</option>
                             </select>
+                            
+                            <label for="memory-tracker-group-mode">Group Chat Mode:</label>
+                            <select id="memory-tracker-group-mode">
+                                <option value="auto" ${extensionSettings.groupChatMode === 'auto' ? 'selected' : ''}>Auto-detect</option>
+                                <option value="combined" ${extensionSettings.groupChatMode === 'combined' ? 'selected' : ''}>Combined (all together)</option>
+                                <option value="per-character" ${extensionSettings.groupChatMode === 'per-character' ? 'selected' : ''}>Per-Character</option>
+                            </select>
+                            <div class="memory-tracker-hint">
+                                <small>Per-Character mode tracks memories separately for each group member</small>
+                            </div>
                             
                             <div class="memory-tracker-buttons">
                                 <button id="memory-tracker-view-memories" class="menu_button">
@@ -249,6 +260,11 @@
             saveSettings();
         });
 
+        $('#memory-tracker-group-mode').on('change', function() {
+            extensionSettings.groupChatMode = $(this).val();
+            saveSettings();
+        });
+
         $('#memory-tracker-view-memories').on('click', function() {
             openMemoryPanel('memories');
         });
@@ -363,33 +379,47 @@
                 memories: [],
                 relationships: {},
                 timeline: [],
-                emotionalStates: {}
+                emotionalStates: {},
+                characterMemories: {} // Per-character memories for group chats
             };
         }
 
+        // Detect if this is a group chat
+        const isGroupChat = context.groupId !== null && context.groupId !== undefined;
+        const characterName = message.name || (message.is_user ? context.name1 : context.name2);
+
         // Extract memory using AI
-        const memoryData = await extractMemoryFromMessage(message, source);
+        const memoryData = await extractMemoryFromMessage(message, source, characterName, isGroupChat);
         
         if (memoryData) {
             // Store memory
             chatMetadata.memoryTracker.memories.push(memoryData);
+            
+            // Store in per-character memory if group chat and per-character mode
+            if (isGroupChat && extensionSettings.groupChatMode === 'per-character') {
+                if (!chatMetadata.memoryTracker.characterMemories[characterName]) {
+                    chatMetadata.memoryTracker.characterMemories[characterName] = [];
+                }
+                chatMetadata.memoryTracker.characterMemories[characterName].push(memoryData);
+            }
             
             // Update timeline
             chatMetadata.memoryTracker.timeline.push({
                 timestamp: Date.now(),
                 messageIndex: context.chat.length - 1,
                 summary: memoryData.summary,
-                importance: memoryData.importance
+                importance: memoryData.importance,
+                characterName: characterName // Track who this is about
             });
             
             // Update relationships if applicable
             if (memoryData.relationship) {
-                updateRelationship(chatMetadata.memoryTracker.relationships, memoryData.relationship);
+                updateRelationship(chatMetadata.memoryTracker.relationships, memoryData.relationship, characterName);
             }
             
             // Update emotional states
             if (memoryData.emotion && extensionSettings.useEmotionalContext) {
-                updateEmotionalState(chatMetadata.memoryTracker.emotionalStates, memoryData.emotion);
+                updateEmotionalState(chatMetadata.memoryTracker.emotionalStates, memoryData.emotion, characterName);
             }
             
             // Trim old memories if needed
@@ -400,7 +430,8 @@
             
             // Show notification if enabled
             if (extensionSettings.showNotifications && memoryData.importance > 0.7) {
-                showNotification(`New significant memory: ${memoryData.summary}`);
+                const prefix = isGroupChat ? `[${characterName}] ` : '';
+                showNotification(`${prefix}New significant memory: ${memoryData.summary}`);
             }
         }
     }
@@ -408,15 +439,17 @@
     /**
      * Extract memory data from a message using AI
      */
-    async function extractMemoryFromMessage(message, source) {
+    async function extractMemoryFromMessage(message, source, characterName, isGroupChat) {
         const context = SillyTavern.getContext();
         
         // Build extraction prompt based on tracking depth
         const depth = extensionSettings.trackingDepth;
         let extractionPrompt = '';
         
+        const groupChatPrefix = isGroupChat ? `This is from a group chat. The character speaking is: ${characterName}\n\n` : '';
+        
         if (depth === 'basic') {
-            extractionPrompt = `Analyze this message and extract any important facts or events. Keep it brief.
+            extractionPrompt = `${groupChatPrefix}Analyze this message and extract any important facts or events. Keep it brief.
 
 Message: "${message.mes}"
 
@@ -425,7 +458,7 @@ Extract:
 2. Importance (0.0 to 1.0)
 3. Emotional tone (positive/negative/neutral)`;
         } else if (depth === 'detailed') {
-            extractionPrompt = `Analyze this message for memory extraction. Focus on significant events, emotional moments, character development, and relationship changes.
+            extractionPrompt = `${groupChatPrefix}Analyze this message for memory extraction. Focus on significant events, emotional moments, character development, and relationship changes.
 
 Message: "${message.mes}"
 
@@ -437,7 +470,7 @@ Extract:
 5. Any relationship dynamics that changed
 6. Keywords for future reference`;
         } else { // comprehensive
-            extractionPrompt = `Perform a comprehensive analysis of this message for character memory tracking.
+            extractionPrompt = `${groupChatPrefix}Perform a comprehensive analysis of this message for character memory tracking.
 
 Message: "${message.mes}"
 
@@ -470,7 +503,8 @@ Extract and analyze:
                         type: 'object',
                         properties: {
                             type: { type: 'string' },
-                            change: { type: 'string' }
+                            change: { type: 'string' },
+                            between: { type: 'string' } // For group chats: "CharA and CharB"
                         }
                     },
                     continuityNote: { type: 'string' }
@@ -489,6 +523,7 @@ Extract and analyze:
                 const memoryData = JSON.parse(result);
                 memoryData.timestamp = Date.now();
                 memoryData.source = source;
+                memoryData.characterName = characterName; // Track which character this memory is about
                 memoryData.messageIndex = context.chat.length - 1;
                 return memoryData;
             }
@@ -502,18 +537,22 @@ Extract and analyze:
     /**
      * Update relationship data
      */
-    function updateRelationship(relationships, relationshipData) {
-        const key = relationshipData.type || 'general';
+    function updateRelationship(relationships, relationshipData, characterName) {
+        // For group chats, use the 'between' field if available
+        const key = relationshipData.between || relationshipData.type || 'general';
+        const fullKey = characterName ? `${characterName}:${key}` : key;
         
-        if (!relationships[key]) {
-            relationships[key] = {
+        if (!relationships[fullKey]) {
+            relationships[fullKey] = {
                 level: 0,
                 history: [],
-                lastUpdate: Date.now()
+                lastUpdate: Date.now(),
+                characterName: characterName,
+                relationshipType: relationshipData.type
             };
         }
 
-        relationships[key].history.push({
+        relationships[fullKey].history.push({
             timestamp: Date.now(),
             change: relationshipData.change
         });
@@ -525,31 +564,35 @@ Extract and analyze:
             'neutral': 0
         };
         
-        relationships[key].level += changeMap[relationshipData.change] || 0;
-        relationships[key].level = Math.max(-1, Math.min(1, relationships[key].level));
-        relationships[key].lastUpdate = Date.now();
+        relationships[fullKey].level += changeMap[relationshipData.change] || 0;
+        relationships[fullKey].level = Math.max(-1, Math.min(1, relationships[fullKey].level));
+        relationships[fullKey].lastUpdate = Date.now();
     }
 
     /**
      * Update emotional state
      */
-    function updateEmotionalState(emotionalStates, emotion) {
+    function updateEmotionalState(emotionalStates, emotion, characterName) {
         const timestamp = Date.now();
+        const key = characterName || 'general';
         
-        if (!emotionalStates.current) {
-            emotionalStates.current = emotion;
-            emotionalStates.history = [];
+        if (!emotionalStates[key]) {
+            emotionalStates[key] = {
+                current: emotion,
+                history: [],
+                characterName: characterName
+            };
         }
 
-        emotionalStates.history.push({
+        emotionalStates[key].history.push({
             timestamp: timestamp,
             emotion: emotion
         });
 
-        emotionalStates.current = emotion;
+        emotionalStates[key].current = emotion;
         
         // Apply decay to old emotional states
-        applyEmotionalDecay(emotionalStates);
+        applyEmotionalDecay(emotionalStates[key]);
     }
 
     /**
@@ -653,10 +696,18 @@ Extract and analyze:
         // Sort by timestamp (most recent first)
         const sortedMemories = [...memories].sort((a, b) => b.timestamp - a.timestamp);
         
+        // Check if this is a group chat
+        const isGroupChat = context.groupId !== null && context.groupId !== undefined;
+        
         sortedMemories.forEach(memory => {
+            const characterBadge = memory.characterName && isGroupChat 
+                ? `<span class="memory-tracker-character-badge">${memory.characterName}</span>` 
+                : '';
+            
             const memoryHtml = `
                 <div class="memory-tracker-item" data-importance="${memory.importance}">
                     <div class="memory-tracker-item-header">
+                        ${characterBadge}
                         <span class="memory-tracker-importance" style="opacity: ${memory.importance}">
                             ${'★'.repeat(Math.ceil(memory.importance * 5))}
                         </span>
