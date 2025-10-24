@@ -53,6 +53,16 @@ A SillyTavern extension that intelligently tracks character relationships, emoti
 
 ## Usage
 
+### 🔄 Using with Existing Chats
+
+**Already in the middle of a great RP?** No problem! See the **[Existing Chats Guide](EXISTING-CHATS.md)** for detailed instructions on retroactively analyzing your chat history.
+
+**Quick version:**
+1. Click "Analyze Existing Chat" button
+2. Wait for processing (shows progress)
+3. Review extracted memories
+4. Continue chatting with full context!
+
 ### Getting Started
 
 1. **Enable the Extension**
@@ -84,6 +94,7 @@ A SillyTavern extension that intelligently tracks character relationships, emoti
 /memory-view - Opens the memories panel
 /memory-relationships - Opens the relationships panel
 /memory-timeline - Opens the timeline view
+/memory-analyze - Analyzes all existing messages (catch-up for ongoing chats)
 /memory-export - Exports all memory data to JSON
 ```
 
@@ -276,6 +287,15 @@ For issues, questions, or feature requests:
 
 ## Changelog
 
+### Version 1.1.0 (2025-10-23)
+- Added "Analyze Existing Chat" feature for retroactive analysis
+- Added `/memory-analyze` slash command
+- Added progress indicator for batch analysis
+- Added smart skip for already-analyzed messages
+- Added EXISTING-CHATS.md guide for mid-chat adoption
+- Improved error handling during analysis
+- Better API rate limit handling with batching
+
 ### Version 1.0.0 (2025-10-23)
 - Initial release
 - Core memory tracking functionality
@@ -289,4 +309,3 @@ For issues, questions, or feature requests:
 ---
 
 **Note**: This extension requires an API that supports structured outputs (JSON schema) for optimal functionality. It will work with any modern LLM API but results may vary.
- 

@@ -133,10 +133,20 @@
                                     <i class="fa-solid fa-heart"></i>
                                     View Relationships
                                 </button>
+                                <button id="memory-tracker-analyze-existing" class="menu_button menu_button_icon">
+                                    <i class="fa-solid fa-clock-rotate-left"></i>
+                                    Analyze Existing Chat
+                                </button>
                                 <button id="memory-tracker-export" class="menu_button">
                                     <i class="fa-solid fa-download"></i>
                                     Export Data
                                 </button>
+                            </div>
+                            <div id="memory-tracker-analysis-status" class="memory-tracker-analysis-status" style="display: none;">
+                                <div class="analysis-progress">
+                                    <div class="analysis-progress-bar"></div>
+                                </div>
+                                <div class="analysis-text">Analyzing message <span class="analysis-current">0</span> of <span class="analysis-total">0</span></div>
                             </div>
                         </div>
                     </div>
@@ -237,6 +247,10 @@
 
         $('#memory-tracker-export').on('click', function() {
             exportMemoryData();
+        });
+
+        $('#memory-tracker-analyze-existing').on('click', function() {
+            analyzeExistingChat();
         });
 
         $('#memory-tracker-close-panel').on('click', function() {
@@ -777,6 +791,164 @@ Extract and analyze:
     }
 
     /**
+     * Analyze existing chat messages to build memory retroactively
+     */
+    async function analyzeExistingChat() {
+        const context = SillyTavern.getContext();
+        const chat = context.chat;
+        const chatMetadata = context.chatMetadata;
+        
+        if (!chat || chat.length === 0) {
+            showNotification('No messages to analyze');
+            return;
+        }
+
+        // Check if user wants to proceed
+        const existingMemories = chatMetadata.memoryTracker?.memories?.length || 0;
+        let proceed = true;
+        
+        if (existingMemories > 0) {
+            proceed = confirm(
+                `This chat already has ${existingMemories} memories tracked.\n\n` +
+                `Analyzing existing messages will:\n` +
+                `• Review all ${chat.length} messages in this chat\n` +
+                `• Extract memories from each message\n` +
+                `• Merge with existing memories\n` +
+                `• May take several minutes for long chats\n\n` +
+                `Continue?`
+            );
+        } else {
+            proceed = confirm(
+                `This will analyze all ${chat.length} messages in this chat to build a complete memory profile.\n\n` +
+                `This process:\n` +
+                `• Uses AI to extract significant moments\n` +
+                `• Tracks relationships and emotions\n` +
+                `• May take several minutes\n` +
+                `• Uses API tokens\n\n` +
+                `Continue?`
+            );
+        }
+        
+        if (!proceed) return;
+
+        // Show progress UI
+        const statusDiv = $('#memory-tracker-analysis-status');
+        const progressBar = $('.analysis-progress-bar');
+        const currentSpan = $('.analysis-current');
+        const totalSpan = $('.analysis-total');
+        const analyzeButton = $('#memory-tracker-analyze-existing');
+        
+        statusDiv.show();
+        analyzeButton.prop('disabled', true).text('Analyzing...');
+        totalSpan.text(chat.length);
+
+        // Initialize memory tracker if needed
+        if (!chatMetadata.memoryTracker) {
+            chatMetadata.memoryTracker = {
+                memories: [],
+                relationships: {},
+                timeline: [],
+                emotionalStates: {}
+            };
+        }
+
+        let processed = 0;
+        let newMemories = 0;
+        const batchSize = 5; // Process in batches to avoid overwhelming the API
+
+        try {
+            // Process messages in batches
+            for (let i = 0; i < chat.length; i += batchSize) {
+                const batch = chat.slice(i, Math.min(i + batchSize, chat.length));
+                
+                for (const message of batch) {
+                    const messageIndex = chat.indexOf(message);
+                    
+                    // Skip if this message was already analyzed
+                    const alreadyAnalyzed = chatMetadata.memoryTracker.memories.some(
+                        m => m.messageIndex === messageIndex
+                    );
+                    
+                    if (!alreadyAnalyzed) {
+                        const source = message.is_user ? 'user' : 'character';
+                        const memoryData = await extractMemoryFromMessage(message, source);
+                        
+                        if (memoryData) {
+                            // Override messageIndex to match the actual position
+                            memoryData.messageIndex = messageIndex;
+                            
+                            // Store memory
+                            chatMetadata.memoryTracker.memories.push(memoryData);
+                            newMemories++;
+                            
+                            // Update timeline
+                            chatMetadata.memoryTracker.timeline.push({
+                                timestamp: message.send_date || Date.now(),
+                                messageIndex: messageIndex,
+                                summary: memoryData.summary,
+                                importance: memoryData.importance
+                            });
+                            
+                            // Update relationships
+                            if (memoryData.relationship) {
+                                updateRelationship(
+                                    chatMetadata.memoryTracker.relationships,
+                                    memoryData.relationship
+                                );
+                            }
+                            
+                            // Update emotional states
+                            if (memoryData.emotion && extensionSettings.useEmotionalContext) {
+                                updateEmotionalState(
+                                    chatMetadata.memoryTracker.emotionalStates,
+                                    memoryData.emotion
+                                );
+                            }
+                        }
+                    }
+                    
+                    processed++;
+                    
+                    // Update progress
+                    currentSpan.text(processed);
+                    const progressPercent = (processed / chat.length) * 100;
+                    progressBar.css('width', progressPercent + '%');
+                }
+                
+                // Small delay between batches to avoid rate limiting
+                if (i + batchSize < chat.length) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+
+            // Sort timeline chronologically
+            chatMetadata.memoryTracker.timeline.sort((a, b) => a.timestamp - b.timestamp);
+            
+            // Trim memories if needed
+            trimMemories(chatMetadata.memoryTracker);
+            
+            // Save metadata
+            await context.saveMetadata();
+            
+            showNotification(
+                `Analysis complete!\n` +
+                `• Processed ${processed} messages\n` +
+                `• Created ${newMemories} new memories\n` +
+                `• Total memories: ${chatMetadata.memoryTracker.memories.length}`
+            );
+            
+        } catch (error) {
+            console.error('[Dynamic Memory Tracker] Error during analysis:', error);
+            showNotification('Error during analysis. Check console for details.');
+        } finally {
+            // Reset UI
+            statusDiv.fadeOut(300);
+            analyzeButton.prop('disabled', false).html('<i class="fa-solid fa-clock-rotate-left"></i> Analyze Existing Chat');
+            progressBar.css('width', '0%');
+        }
+    }
+
+    /**
      * Export memory data
      */
     function exportMemoryData() {
@@ -866,6 +1038,15 @@ Extract and analyze:
             },
             helpString: 'Exports all memory data to a JSON file'
         }));
+
+        SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+            name: 'memory-analyze',
+            callback: async () => {
+                await analyzeExistingChat();
+                return 'Chat analysis started';
+            },
+            helpString: 'Analyzes all existing messages in the current chat to build memory profile'
+        }));
     }
 
     // Initialize when the app is ready
@@ -876,4 +1057,3 @@ Extract and analyze:
         }
     }, 100);
 })();
- 

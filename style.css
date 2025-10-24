@@ -401,6 +401,36 @@
     animation: highlight-flash 1s ease-in-out 2;
 }
 
+/* Analysis Progress */
+.memory-tracker-analysis-status {
+    margin-top: 15px;
+    padding: 15px;
+    background: rgba(0, 153, 255, 0.1);
+    border: 1px solid rgba(0, 153, 255, 0.3);
+    border-radius: 5px;
+}
+
+.analysis-progress {
+    height: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.analysis-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #0099ff, #00ffcc);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.analysis-text {
+    text-align: center;
+    font-size: 0.9em;
+    color: var(--SmartThemeBodyColor, #ccc);
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .memory-tracker-panel {
@@ -420,4 +450,3 @@
         flex-direction: column;
     }
 }
- 

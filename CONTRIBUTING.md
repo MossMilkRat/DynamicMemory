@@ -360,7 +360,7 @@ This project is licensed under AGPL-3.0. By contributing, you agree to license y
 
 ## Acknowledgments
 
-Thanks to all contributors and the SillyTavern community! 
+Thanks to all contributors and the SillyTavern community!
 
 ---
 
