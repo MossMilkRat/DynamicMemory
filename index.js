@@ -1172,38 +1172,59 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
             // Method 1: Try to get from world_info_data (newer ST versions)
             if (context.world_info_data && Array.isArray(context.world_info_data)) {
                 worldInfo = context.world_info_data;
+                console.log('[Dynamic Memory Tracker] Method 1: world_info_data');
             }
             // Method 2: Try worldInfoData (alternative property name)
-            else if (context.worldInfoData && Array.isArray(context.worldInfoData)) {
-                worldInfo = context.worldInfoData;
+            else if (context.worldInfoData) {
+                if (Array.isArray(context.worldInfoData)) {
+                    worldInfo = context.worldInfoData;
+                } else if (Array.isArray(context.worldInfoData.entries)) {
+                    worldInfo = context.worldInfoData.entries;
+                }
+                console.log('[Dynamic Memory Tracker] Method 2: worldInfoData');
             }
             // Method 3: Try to get from chat metadata
             else if (context.chatMetadata && context.chatMetadata.world_info) {
-                worldInfo = context.chatMetadata.world_info;
+                if (Array.isArray(context.chatMetadata.world_info)) {
+                    worldInfo = context.chatMetadata.world_info;
+                } else if (Array.isArray(context.chatMetadata.world_info.entries)) {
+                    worldInfo = context.chatMetadata.world_info.entries;
+                }
+                console.log('[Dynamic Memory Tracker] Method 3: chatMetadata.world_info');
             }
             // Method 4: Try to access through characters
             else if (context.characters && context.characters[context.characterId]) {
                 const char = context.characters[context.characterId];
-                if (char.data && char.data.character_book && char.data.character_book.entries) {
+                if (char.data && char.data.character_book && Array.isArray(char.data.character_book.entries)) {
                     worldInfo = char.data.character_book.entries;
+                    console.log('[Dynamic Memory Tracker] Method 4: character_book.entries');
                 }
             }
             // Method 5: Try direct access to world_info
             else if (window.world_info && Array.isArray(window.world_info.entries)) {
                 worldInfo = window.world_info.entries;
+                console.log('[Dynamic Memory Tracker] Method 5: window.world_info.entries');
             }
             // Method 6: Try getWorldInfoSettings
             else if (typeof SillyTavern.getWorldInfoSettings === 'function') {
                 const wiSettings = SillyTavern.getWorldInfoSettings();
-                if (wiSettings && wiSettings.entries) {
+                if (wiSettings && Array.isArray(wiSettings.entries)) {
                     worldInfo = wiSettings.entries;
+                    console.log('[Dynamic Memory Tracker] Method 6: getWorldInfoSettings');
                 }
+            }
+            
+            // Ensure it's an array
+            if (!Array.isArray(worldInfo)) {
+                console.warn('[Dynamic Memory Tracker] worldInfo not an array, resetting');
+                worldInfo = [];
             }
             
             console.log('[Dynamic Memory Tracker] Found', worldInfo.length, 'World Info entries');
             
         } catch (error) {
             console.error('[Dynamic Memory Tracker] Error accessing world info:', error);
+            worldInfo = []; // Reset to empty array on error
         }
         
         // Also try to get character-specific lorebook
@@ -1230,12 +1251,23 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
             console.error('[Dynamic Memory Tracker] Error accessing character book:', error);
         }
         
+        // Ensure worldInfo is an array
+        if (!Array.isArray(worldInfo)) {
+            console.warn('[Dynamic Memory Tracker] worldInfo is not an array, converting:', typeof worldInfo);
+            worldInfo = [];
+        }
+        
         // Remove duplicates based on content
         const seen = new Set();
         worldInfo = worldInfo.filter(entry => {
-            const key = (entry.content || entry.description || '') + (entry.key || entry.keys || []).join(',');
-            if (seen.has(key)) return false;
-            seen.add(key);
+            if (!entry) return false; // Skip null/undefined entries
+            const content = entry.content || entry.description || entry.text || '';
+            const keys = entry.key || entry.keys || [];
+            const keyString = Array.isArray(keys) ? keys.join(',') : String(keys);
+            const uniqueKey = content + keyString;
+            
+            if (seen.has(uniqueKey)) return false;
+            seen.add(uniqueKey);
             return true;
         });
         
