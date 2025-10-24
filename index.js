@@ -1165,28 +1165,112 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
     function openLorebookImportDialog() {
         const context = SillyTavern.getContext();
         
-        // Get World Info entries
+        // Get World Info entries from multiple sources
         let worldInfo = [];
         
         try {
-            // Try to access world info from context
-            if (context.worldInfoData) {
-                worldInfo = context.worldInfoData.entries || [];
+            // Method 1: Try to get from world_info_data (newer ST versions)
+            if (context.world_info_data && Array.isArray(context.world_info_data)) {
+                worldInfo = context.world_info_data;
             }
+            // Method 2: Try worldInfoData (alternative property name)
+            else if (context.worldInfoData && Array.isArray(context.worldInfoData)) {
+                worldInfo = context.worldInfoData;
+            }
+            // Method 3: Try to get from chat metadata
+            else if (context.chatMetadata && context.chatMetadata.world_info) {
+                worldInfo = context.chatMetadata.world_info;
+            }
+            // Method 4: Try to access through characters
+            else if (context.characters && context.characters[context.characterId]) {
+                const char = context.characters[context.characterId];
+                if (char.data && char.data.character_book && char.data.character_book.entries) {
+                    worldInfo = char.data.character_book.entries;
+                }
+            }
+            // Method 5: Try direct access to world_info
+            else if (window.world_info && Array.isArray(window.world_info.entries)) {
+                worldInfo = window.world_info.entries;
+            }
+            // Method 6: Try getWorldInfoSettings
+            else if (typeof SillyTavern.getWorldInfoSettings === 'function') {
+                const wiSettings = SillyTavern.getWorldInfoSettings();
+                if (wiSettings && wiSettings.entries) {
+                    worldInfo = wiSettings.entries;
+                }
+            }
+            
+            console.log('[Dynamic Memory Tracker] Found', worldInfo.length, 'World Info entries');
+            
         } catch (error) {
             console.error('[Dynamic Memory Tracker] Error accessing world info:', error);
         }
         
+        // Also try to get character-specific lorebook
+        try {
+            if (context.characters && context.characters[context.characterId]) {
+                const char = context.characters[context.characterId];
+                
+                // V2 character cards
+                if (char.data && char.data.character_book) {
+                    const charBook = char.data.character_book;
+                    if (charBook.entries && Array.isArray(charBook.entries)) {
+                        console.log('[Dynamic Memory Tracker] Found', charBook.entries.length, 'character book entries');
+                        worldInfo = [...worldInfo, ...charBook.entries];
+                    }
+                }
+                
+                // Alternative structure
+                if (char.book && Array.isArray(char.book)) {
+                    console.log('[Dynamic Memory Tracker] Found', char.book.length, 'character book entries (alt)');
+                    worldInfo = [...worldInfo, ...char.book];
+                }
+            }
+        } catch (error) {
+            console.error('[Dynamic Memory Tracker] Error accessing character book:', error);
+        }
+        
+        // Remove duplicates based on content
+        const seen = new Set();
+        worldInfo = worldInfo.filter(entry => {
+            const key = (entry.content || entry.description || '') + (entry.key || entry.keys || []).join(',');
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+        
         if (worldInfo.length === 0) {
-            showNotification('No World Info/Lorebook entries found for this character or chat');
+            showNotification(
+                'No World Info/Lorebook entries found.\n\n' +
+                'Make sure:\n' +
+                '• World Info is enabled (book icon in toolbar)\n' +
+                '• Character has lorebook entries\n' +
+                '• Or global World Info file is loaded\n\n' +
+                'Check browser console (F12) for details.'
+            );
             return;
         }
         
+        console.log('[Dynamic Memory Tracker] Total unique entries:', worldInfo.length);
+        
         // Create dialog with lorebook entries
         let entriesHtml = worldInfo.map((entry, index) => {
-            const content = entry.content || entry.description || '';
-            const keys = entry.key ? entry.key.join(', ') : (entry.keys || []).join(', ');
-            const comment = entry.comment || entry.title || `Entry ${index + 1}`;
+            // Handle different entry formats
+            const content = entry.content || entry.description || entry.text || '';
+            
+            // Handle different key formats
+            let keys = '';
+            if (Array.isArray(entry.key)) {
+                keys = entry.key.join(', ');
+            } else if (Array.isArray(entry.keys)) {
+                keys = entry.keys.join(', ');
+            } else if (typeof entry.key === 'string') {
+                keys = entry.key;
+            } else if (typeof entry.keys === 'string') {
+                keys = entry.keys;
+            }
+            
+            const comment = entry.comment || entry.title || entry.name || `Entry ${index + 1}`;
             
             return `
                 <div class="lorebook-entry">
@@ -1206,7 +1290,7 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
             <div id="memory-lorebook-dialog" class="memory-range-dialog">
                 <div class="memory-range-content" style="max-width: 800px;">
                     <h3>Import from Lorebook</h3>
-                    <p>Select World Info entries to convert into memories:</p>
+                    <p>Found <strong>${worldInfo.length}</strong> World Info entries. Select which to import:</p>
                     
                     <div class="lorebook-options">
                         <label>
@@ -1286,7 +1370,8 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
                 memories: [],
                 relationships: {},
                 timeline: [],
-                emotionalStates: {}
+                emotionalStates: {},
+                characterMemories: {}
             };
         }
         
@@ -1294,16 +1379,32 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
         
         for (const index of selectedIndices) {
             const entry = worldInfo[index];
-            const content = entry.content || entry.description || '';
-            const keys = entry.key ? entry.key : (entry.keys || []);
-            const comment = entry.comment || entry.title || `Lorebook Entry ${index + 1}`;
+            
+            // Handle different content field names
+            const content = entry.content || entry.description || entry.text || '';
+            
+            // Handle different key formats
+            let keys = [];
+            if (Array.isArray(entry.key)) {
+                keys = entry.key;
+            } else if (Array.isArray(entry.keys)) {
+                keys = entry.keys;
+            } else if (typeof entry.key === 'string') {
+                keys = entry.key.split(',').map(k => k.trim());
+            } else if (typeof entry.keys === 'string') {
+                keys = entry.keys.split(',').map(k => k.trim());
+            }
+            
+            const comment = entry.comment || entry.title || entry.name || `Lorebook Entry ${index + 1}`;
             
             // Create memory from lorebook entry
             const memoryData = {
-                summary: `${comment}: ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}`,
+                summary: content.length > 200 
+                    ? `${comment}: ${content.substring(0, 200)}...`
+                    : `${comment}: ${content}`,
                 importance: importance,
                 emotion: 'factual',
-                keywords: [...keys, 'lorebook', 'imported'],
+                keywords: [...keys, 'lorebook', 'imported'].filter(k => k && k.length > 0),
                 continuityNote: `Imported from World Info: ${comment}`,
                 timestamp: Date.now(),
                 source: 'lorebook',
@@ -1325,7 +1426,7 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
         // Save metadata
         await context.saveMetadata();
         
-        showNotification(`Imported ${imported} entries from lorebook`);
+        showNotification(`Imported ${imported} ${imported === 1 ? 'entry' : 'entries'} from lorebook`);
         
         // Refresh UI if panel is open
         if ($(`#${MEMORY_PANEL_ID}`).is(':visible')) {
