@@ -137,6 +137,10 @@
                                     <i class="fa-solid fa-clock-rotate-left"></i>
                                     Analyze Existing Chat
                                 </button>
+                                <button id="memory-tracker-analyze-range" class="menu_button menu_button_icon">
+                                    <i class="fa-solid fa-sliders"></i>
+                                    Analyze Range
+                                </button>
                                 <button id="memory-tracker-export" class="menu_button">
                                     <i class="fa-solid fa-download"></i>
                                     Export Data
@@ -251,6 +255,10 @@
 
         $('#memory-tracker-analyze-existing').on('click', function() {
             analyzeExistingChat();
+        });
+
+        $('#memory-tracker-analyze-range').on('click', function() {
+            openRangeAnalysisDialog();
         });
 
         $('#memory-tracker-close-panel').on('click', function() {
@@ -788,6 +796,281 @@ Extract and analyze:
                 $(this).hide();
             }
         });
+    }
+
+    /**
+     * Open range analysis dialog for selective message analysis
+     */
+    function openRangeAnalysisDialog() {
+        const context = SillyTavern.getContext();
+        const chat = context.chat;
+        
+        if (!chat || chat.length === 0) {
+            showNotification('No messages to analyze');
+            return;
+        }
+
+        const totalMessages = chat.length;
+        
+        // Create dialog HTML
+        const dialogHtml = `
+            <div id="memory-range-dialog" class="memory-range-dialog">
+                <div class="memory-range-content">
+                    <h3>Analyze Message Range</h3>
+                    <p>Total messages in chat: <strong>${totalMessages}</strong></p>
+                    <p>Select which messages to analyze:</p>
+                    
+                    <div class="range-option">
+                        <label>
+                            <input type="radio" name="range-type" value="recent" checked>
+                            <strong>Recent messages</strong> (recommended for long chats)
+                        </label>
+                        <div class="range-input">
+                            <label>Last <input type="number" id="range-recent-count" value="200" min="10" max="${totalMessages}"> messages</label>
+                        </div>
+                    </div>
+                    
+                    <div class="range-option">
+                        <label>
+                            <input type="radio" name="range-type" value="custom">
+                            <strong>Custom range</strong>
+                        </label>
+                        <div class="range-input">
+                            <label>From message <input type="number" id="range-start" value="1" min="1" max="${totalMessages}"></label>
+                            <label>To message <input type="number" id="range-end" value="${totalMessages}" min="1" max="${totalMessages}"></label>
+                        </div>
+                    </div>
+                    
+                    <div class="range-option">
+                        <label>
+                            <input type="radio" name="range-type" value="all">
+                            <strong>All messages</strong> (may take a long time!)
+                        </label>
+                    </div>
+                    
+                    <div class="range-estimate">
+                        <p><strong>Estimated time:</strong> <span id="estimate-time">3-5 minutes</span></p>
+                        <p><strong>Estimated tokens:</strong> <span id="estimate-tokens">30k-50k</span></p>
+                    </div>
+                    
+                    <div class="range-buttons">
+                        <button id="range-analyze-btn" class="menu_button">Start Analysis</button>
+                        <button id="range-cancel-btn" class="menu_button">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Remove existing dialog if any
+        $('#memory-range-dialog').remove();
+        
+        // Add to body
+        $('body').append(dialogHtml);
+        
+        // Show dialog
+        $('#memory-range-dialog').fadeIn(200);
+        
+        // Update estimates on input change
+        function updateEstimates() {
+            const rangeType = $('input[name="range-type"]:checked').val();
+            let messageCount = 0;
+            
+            if (rangeType === 'recent') {
+                messageCount = parseInt($('#range-recent-count').val()) || 200;
+            } else if (rangeType === 'custom') {
+                const start = parseInt($('#range-start').val()) || 1;
+                const end = parseInt($('#range-end').val()) || totalMessages;
+                messageCount = Math.max(0, end - start + 1);
+            } else {
+                messageCount = totalMessages;
+            }
+            
+            // Calculate estimates based on tracking depth
+            const depth = extensionSettings.trackingDepth || 'detailed';
+            let tokensPerMessage = 400; // detailed average
+            
+            if (depth === 'basic') tokensPerMessage = 225;
+            if (depth === 'comprehensive') tokensPerMessage = 650;
+            
+            const totalTokens = messageCount * tokensPerMessage;
+            const timeMinutes = Math.ceil(messageCount / 20); // ~20 messages per minute
+            
+            // Update UI
+            $('#estimate-time').text(
+                timeMinutes < 60 
+                    ? `${timeMinutes}-${Math.ceil(timeMinutes * 1.5)} minutes`
+                    : `${Math.floor(timeMinutes / 60)}-${Math.ceil(timeMinutes * 1.5 / 60)} hours`
+            );
+            
+            $('#estimate-tokens').text(
+                totalTokens < 1000 
+                    ? `${totalTokens.toFixed(0)} tokens`
+                    : `${(totalTokens / 1000).toFixed(0)}k tokens`
+            );
+        }
+        
+        // Attach event handlers
+        $('input[name="range-type"]').on('change', updateEstimates);
+        $('#range-recent-count, #range-start, #range-end').on('input', updateEstimates);
+        
+        $('#range-analyze-btn').on('click', function() {
+            const rangeType = $('input[name="range-type"]:checked').val();
+            let start, end;
+            
+            if (rangeType === 'recent') {
+                const count = parseInt($('#range-recent-count').val()) || 200;
+                start = Math.max(0, totalMessages - count);
+                end = totalMessages - 1;
+            } else if (rangeType === 'custom') {
+                start = (parseInt($('#range-start').val()) || 1) - 1; // Convert to 0-indexed
+                end = (parseInt($('#range-end').val()) || totalMessages) - 1;
+            } else {
+                start = 0;
+                end = totalMessages - 1;
+            }
+            
+            // Validate range
+            if (start < 0) start = 0;
+            if (end >= totalMessages) end = totalMessages - 1;
+            if (start > end) {
+                showNotification('Invalid range: start must be before end');
+                return;
+            }
+            
+            $('#memory-range-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+            
+            analyzeMessageRange(start, end);
+        });
+        
+        $('#range-cancel-btn').on('click', function() {
+            $('#memory-range-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+        });
+        
+        // Initial estimate
+        updateEstimates();
+    }
+
+    /**
+     * Analyze a specific range of messages
+     */
+    async function analyzeMessageRange(startIndex, endIndex) {
+        const context = SillyTavern.getContext();
+        const chat = context.chat;
+        const chatMetadata = context.chatMetadata;
+        
+        const messageCount = endIndex - startIndex + 1;
+        
+        const proceed = confirm(
+            `Analyze ${messageCount} messages (${startIndex + 1} to ${endIndex + 1})?\n\n` +
+            `This will extract memories from the selected range.`
+        );
+        
+        if (!proceed) return;
+        
+        // Show progress UI
+        const statusDiv = $('#memory-tracker-analysis-status');
+        const progressBar = $('.analysis-progress-bar');
+        const currentSpan = $('.analysis-current');
+        const totalSpan = $('.analysis-total');
+        const analyzeButton = $('#memory-tracker-analyze-existing, #memory-tracker-analyze-range');
+        
+        statusDiv.show();
+        analyzeButton.prop('disabled', true);
+        totalSpan.text(messageCount);
+        
+        // Initialize memory tracker if needed
+        if (!chatMetadata.memoryTracker) {
+            chatMetadata.memoryTracker = {
+                memories: [],
+                relationships: {},
+                timeline: [],
+                emotionalStates: {}
+            };
+        }
+        
+        let processed = 0;
+        let newMemories = 0;
+        const batchSize = 5;
+        
+        try {
+            for (let i = startIndex; i <= endIndex; i += batchSize) {
+                const batchEnd = Math.min(i + batchSize, endIndex + 1);
+                const batch = chat.slice(i, batchEnd);
+                
+                for (const message of batch) {
+                    const messageIndex = chat.indexOf(message);
+                    
+                    // Skip if already analyzed
+                    const alreadyAnalyzed = chatMetadata.memoryTracker.memories.some(
+                        m => m.messageIndex === messageIndex
+                    );
+                    
+                    if (!alreadyAnalyzed) {
+                        const source = message.is_user ? 'user' : 'character';
+                        const memoryData = await extractMemoryFromMessage(message, source);
+                        
+                        if (memoryData) {
+                            memoryData.messageIndex = messageIndex;
+                            chatMetadata.memoryTracker.memories.push(memoryData);
+                            newMemories++;
+                            
+                            chatMetadata.memoryTracker.timeline.push({
+                                timestamp: message.send_date || Date.now(),
+                                messageIndex: messageIndex,
+                                summary: memoryData.summary,
+                                importance: memoryData.importance
+                            });
+                            
+                            if (memoryData.relationship) {
+                                updateRelationship(
+                                    chatMetadata.memoryTracker.relationships,
+                                    memoryData.relationship
+                                );
+                            }
+                            
+                            if (memoryData.emotion && extensionSettings.useEmotionalContext) {
+                                updateEmotionalState(
+                                    chatMetadata.memoryTracker.emotionalStates,
+                                    memoryData.emotion
+                                );
+                            }
+                        }
+                    }
+                    
+                    processed++;
+                    currentSpan.text(processed);
+                    const progressPercent = (processed / messageCount) * 100;
+                    progressBar.css('width', progressPercent + '%');
+                }
+                
+                if (i + batchSize <= endIndex) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+            
+            chatMetadata.memoryTracker.timeline.sort((a, b) => a.timestamp - b.timestamp);
+            trimMemories(chatMetadata.memoryTracker);
+            await context.saveMetadata();
+            
+            showNotification(
+                `Range analysis complete!\n` +
+                `• Processed messages ${startIndex + 1} to ${endIndex + 1}\n` +
+                `• Created ${newMemories} new memories\n` +
+                `• Total memories: ${chatMetadata.memoryTracker.memories.length}`
+            );
+            
+        } catch (error) {
+            console.error('[Dynamic Memory Tracker] Error during range analysis:', error);
+            showNotification('Error during analysis. Check console for details.');
+        } finally {
+            statusDiv.fadeOut(300);
+            analyzeButton.prop('disabled', false);
+            progressBar.css('width', '0%');
+        }
     }
 
     /**

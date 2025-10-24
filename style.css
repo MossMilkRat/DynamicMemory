@@ -431,6 +431,96 @@
     color: var(--SmartThemeBodyColor, #ccc);
 }
 
+/* Range Analysis Dialog */
+.memory-range-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+}
+
+.memory-range-content {
+    background: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.95));
+    border: 1px solid var(--SmartThemeBorderColor, #666);
+    border-radius: 10px;
+    padding: 30px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.memory-range-content h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+.range-option {
+    margin: 20px 0;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--SmartThemeBorderColor, #666);
+    border-radius: 5px;
+}
+
+.range-option label {
+    display: block;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+
+.range-option input[type="radio"] {
+    margin-right: 8px;
+}
+
+.range-input {
+    margin-left: 25px;
+    margin-top: 10px;
+}
+
+.range-input label {
+    display: block;
+    margin: 5px 0;
+}
+
+.range-input input[type="number"] {
+    width: 100px;
+    padding: 5px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--SmartThemeBorderColor, #666);
+    border-radius: 3px;
+    color: var(--SmartThemeBodyColor, #ccc);
+    margin: 0 5px;
+}
+
+.range-estimate {
+    margin: 20px 0;
+    padding: 15px;
+    background: rgba(0, 153, 255, 0.1);
+    border: 1px solid rgba(0, 153, 255, 0.3);
+    border-radius: 5px;
+}
+
+.range-estimate p {
+    margin: 5px 0;
+}
+
+.range-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.range-buttons button {
+    flex: 1;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .memory-tracker-panel {
