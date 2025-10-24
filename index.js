@@ -453,85 +453,201 @@
 
 Message: "${message.mes}"
 
-Extract:
-1. Main event or fact (one sentence)
-2. Importance (0.0 to 1.0)
-3. Emotional tone (positive/negative/neutral)`;
+Return ONLY a JSON object (no other text) with this exact structure:
+{
+  "summary": "one sentence description",
+  "importance": 0.5,
+  "emotion": "neutral",
+  "keywords": ["keyword1", "keyword2"]
+}`;
         } else if (depth === 'detailed') {
             extractionPrompt = `${groupChatPrefix}Analyze this message for memory extraction. Focus on significant events, emotional moments, character development, and relationship changes.
 
 Message: "${message.mes}"
 
-Extract:
-1. Summary of the main event or revelation
-2. Importance score (0.0 to 1.0, where 1.0 is extremely significant)
-3. Emotional context (describe the emotional state)
-4. Character feelings or thoughts
-5. Any relationship dynamics that changed
-6. Keywords for future reference`;
+Return ONLY a JSON object (no other text, no markdown, no explanation) with this exact structure:
+{
+  "summary": "brief summary of main event",
+  "importance": 0.7,
+  "emotion": "describe emotion",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "relationship": {
+    "type": "friendship",
+    "change": "improved",
+    "between": "CharA and CharB"
+  },
+  "continuityNote": "important detail to remember"
+}
+
+If no significant event, return: {"summary": "none", "importance": 0.0, "emotion": "neutral", "keywords": []}`;
         } else { // comprehensive
             extractionPrompt = `${groupChatPrefix}Perform a comprehensive analysis of this message for character memory tracking.
 
 Message: "${message.mes}"
 
-Extract and analyze:
-1. Event summary (what happened)
-2. Emotional analysis (feelings, tone, subtext)
-3. Character development (how this affects the character)
-4. Relationship dynamics (changes in relationships)
-5. Important revelations or secrets shared
-6. Continuity notes (things that should be remembered later)
-7. Keywords and tags
-8. Importance score (0.0 to 1.0)
-9. Any potential contradictions with previous events`;
+Return ONLY a JSON object (no markdown formatting, no code blocks, no explanation) with this structure:
+{
+  "summary": "detailed summary",
+  "importance": 0.8,
+  "emotion": "emotional analysis",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "relationship": {
+    "type": "type of relationship",
+    "change": "improved/worsened/neutral",
+    "between": "Character names"
+  },
+  "continuityNote": "important continuity note"
+}`;
         }
-
-        const jsonSchema = {
-            name: 'MemoryExtraction',
-            strict: true,
-            value: {
-                type: 'object',
-                properties: {
-                    summary: { type: 'string' },
-                    importance: { type: 'number' },
-                    emotion: { type: 'string' },
-                    keywords: {
-                        type: 'array',
-                        items: { type: 'string' }
-                    },
-                    relationship: {
-                        type: 'object',
-                        properties: {
-                            type: { type: 'string' },
-                            change: { type: 'string' },
-                            between: { type: 'string' } // For group chats: "CharA and CharB"
-                        }
-                    },
-                    continuityNote: { type: 'string' }
-                },
-                required: ['summary', 'importance', 'emotion', 'keywords']
-            }
-        };
 
         try {
+            // Try with JSON schema if supported
             const result = await context.generateQuietPrompt({
                 quietPrompt: extractionPrompt,
-                jsonSchema: jsonSchema
+                quietToLoud: true
             });
 
-            if (result) {
-                const memoryData = JSON.parse(result);
-                memoryData.timestamp = Date.now();
-                memoryData.source = source;
-                memoryData.characterName = characterName; // Track which character this memory is about
-                memoryData.messageIndex = context.chat.length - 1;
-                return memoryData;
+            if (!result) {
+                console.log('[Dynamic Memory Tracker] No result from AI');
+                return null;
             }
+
+            // Try to parse the result
+            let memoryData = null;
+            
+            // Remove markdown code blocks if present
+            let cleanResult = result.trim();
+            cleanResult = cleanResult.replace(/```json\n?/g, '');
+            cleanResult = cleanResult.replace(/```\n?/g, '');
+            cleanResult = cleanResult.trim();
+            
+            // Try to find JSON in the response
+            const jsonMatch = cleanResult.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                cleanResult = jsonMatch[0];
+            }
+            
+            try {
+                memoryData = JSON.parse(cleanResult);
+            } catch (parseError) {
+                console.warn('[Dynamic Memory Tracker] Failed to parse JSON, attempting manual extraction:', parseError);
+                
+                // Fallback: try to extract information manually from the text
+                memoryData = extractMemoryManually(result, message.mes);
+                
+                if (!memoryData) {
+                    console.error('[Dynamic Memory Tracker] Could not extract memory data');
+                    return null;
+                }
+            }
+
+            // Validate we have minimum required fields
+            if (!memoryData.summary || memoryData.summary === 'none') {
+                return null;
+            }
+
+            // Ensure all required fields exist with defaults
+            memoryData.summary = memoryData.summary || 'Event occurred';
+            memoryData.importance = typeof memoryData.importance === 'number' ? memoryData.importance : 0.5;
+            memoryData.emotion = memoryData.emotion || 'neutral';
+            memoryData.keywords = Array.isArray(memoryData.keywords) ? memoryData.keywords : ['general'];
+            memoryData.continuityNote = memoryData.continuityNote || '';
+            
+            // Add metadata
+            memoryData.timestamp = Date.now();
+            memoryData.source = source;
+            memoryData.characterName = characterName;
+            memoryData.messageIndex = context.chat.length - 1;
+            
+            return memoryData;
+            
         } catch (error) {
             console.error('[Dynamic Memory Tracker] Error extracting memory:', error);
+            return null;
         }
+    }
 
-        return null;
+    /**
+     * Fallback manual extraction when JSON parsing fails
+     */
+    function extractMemoryManually(aiResponse, originalMessage) {
+        try {
+            // Try to extract key information from free-form text
+            const lines = aiResponse.split('\n');
+            const memoryData = {
+                summary: '',
+                importance: 0.5,
+                emotion: 'neutral',
+                keywords: [],
+                continuityNote: ''
+            };
+            
+            // Look for patterns in the response
+            for (const line of lines) {
+                const lower = line.toLowerCase().trim();
+                
+                // Summary
+                if (lower.includes('summary') || lower.includes('main event') || lower.includes('event:')) {
+                    const summaryMatch = line.match(/[:：](.*)/);
+                    if (summaryMatch) {
+                        memoryData.summary = summaryMatch[1].trim();
+                    }
+                }
+                
+                // Importance
+                if (lower.includes('importance')) {
+                    const importanceMatch = line.match(/(\d+\.?\d*)/);
+                    if (importanceMatch) {
+                        memoryData.importance = parseFloat(importanceMatch[1]);
+                        if (memoryData.importance > 1) memoryData.importance /= 10;
+                    }
+                }
+                
+                // Emotion
+                if (lower.includes('emotion') || lower.includes('tone') || lower.includes('feeling')) {
+                    const emotionMatch = line.match(/[:：](.*)/);
+                    if (emotionMatch) {
+                        memoryData.emotion = emotionMatch[1].trim();
+                    }
+                }
+                
+                // Keywords
+                if (lower.includes('keyword') || lower.includes('tags')) {
+                    const keywordMatch = line.match(/[:：](.*)/);
+                    if (keywordMatch) {
+                        memoryData.keywords = keywordMatch[1]
+                            .split(/[,，、]/)
+                            .map(k => k.trim())
+                            .filter(k => k.length > 0);
+                    }
+                }
+                
+                // Continuity note
+                if (lower.includes('continuity') || lower.includes('remember') || lower.includes('note')) {
+                    const noteMatch = line.match(/[:：](.*)/);
+                    if (noteMatch) {
+                        memoryData.continuityNote = noteMatch[1].trim();
+                    }
+                }
+            }
+            
+            // If we still don't have a summary, create a simple one
+            if (!memoryData.summary || memoryData.summary.length < 5) {
+                memoryData.summary = originalMessage.substring(0, 100).trim();
+                if (originalMessage.length > 100) memoryData.summary += '...';
+            }
+            
+            // Ensure we have at least one keyword
+            if (memoryData.keywords.length === 0) {
+                memoryData.keywords = ['conversation'];
+            }
+            
+            return memoryData;
+            
+        } catch (error) {
+            console.error('[Dynamic Memory Tracker] Manual extraction failed:', error);
+            return null;
+        }
     }
 
     /**
@@ -1383,9 +1499,13 @@ Extract and analyze:
         
         const messageCount = endIndex - startIndex + 1;
         
+        // Show helpful message about JSON parsing
+        const apiInfo = `Note: The extension will attempt to extract memories even if your API doesn't perfectly support JSON output. You may see some parsing warnings in the console - this is normal and the extension will try alternative extraction methods.`;
+        
         const proceed = confirm(
             `Analyze ${messageCount} messages (${startIndex + 1} to ${endIndex + 1})?\n\n` +
-            `This will extract memories from the selected range.`
+            `This will extract memories from the selected range.\n\n` +
+            `${apiInfo}`
         );
         
         if (!proceed) return;
