@@ -521,6 +521,127 @@
     flex: 1;
 }
 
+/* Manual Memory Form */
+.manual-memory-form {
+    margin: 20px 0;
+}
+
+.manual-memory-form label {
+    display: block;
+    margin-bottom: 15px;
+}
+
+.manual-memory-form label strong {
+    display: block;
+    margin-bottom: 5px;
+}
+
+.manual-memory-form textarea,
+.manual-memory-form input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--SmartThemeBorderColor, #666);
+    border-radius: 3px;
+    color: var(--SmartThemeBodyColor, #ccc);
+    font-family: inherit;
+    resize: vertical;
+}
+
+.manual-memory-form input[type="range"] {
+    width: calc(100% - 50px);
+    vertical-align: middle;
+    margin-right: 10px;
+}
+
+.manual-memory-form select {
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--SmartThemeBorderColor, #666);
+    border-radius: 3px;
+    color: var(--SmartThemeBodyColor, #ccc);
+    margin-right: 10px;
+}
+
+/* Lorebook Import */
+.lorebook-options {
+    margin: 15px 0;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.lorebook-options label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.lorebook-options input[type="range"] {
+    width: 100px;
+    margin: 0 8px;
+}
+
+.lorebook-entries-list {
+    max-height: 400px;
+    overflow-y: auto;
+    margin: 15px 0;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+}
+
+.lorebook-entry {
+    margin: 10px 0;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--SmartThemeBorderColor, #666);
+    border-radius: 5px;
+    transition: all 0.2s ease;
+}
+
+.lorebook-entry:hover {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: var(--SmartThemeQuoteColor, #0099ff);
+}
+
+.lorebook-entry label {
+    display: flex;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.lorebook-checkbox {
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.lorebook-entry-content {
+    flex: 1;
+}
+
+.lorebook-entry-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: var(--SmartThemeQuoteColor, #0099ff);
+}
+
+.lorebook-entry-keys {
+    font-size: 0.85em;
+    color: var(--SmartThemeBodyColor, #999);
+    margin-bottom: 5px;
+    font-style: italic;
+}
+
+.lorebook-entry-text {
+    font-size: 0.9em;
+    line-height: 1.4;
+    color: var(--SmartThemeBodyColor, #ccc);
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .memory-tracker-panel {

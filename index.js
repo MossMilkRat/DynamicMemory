@@ -141,6 +141,14 @@
                                     <i class="fa-solid fa-sliders"></i>
                                     Analyze Range
                                 </button>
+                                <button id="memory-tracker-add-manual" class="menu_button menu_button_icon">
+                                    <i class="fa-solid fa-plus"></i>
+                                    Add Manual Memory
+                                </button>
+                                <button id="memory-tracker-import-lorebook" class="menu_button menu_button_icon">
+                                    <i class="fa-solid fa-book"></i>
+                                    Import from Lorebook
+                                </button>
                                 <button id="memory-tracker-export" class="menu_button">
                                     <i class="fa-solid fa-download"></i>
                                     Export Data
@@ -259,6 +267,14 @@
 
         $('#memory-tracker-analyze-range').on('click', function() {
             openRangeAnalysisDialog();
+        });
+
+        $('#memory-tracker-add-manual').on('click', function() {
+            openManualMemoryDialog();
+        });
+
+        $('#memory-tracker-import-lorebook').on('click', function() {
+            openLorebookImportDialog();
         });
 
         $('#memory-tracker-close-panel').on('click', function() {
@@ -796,6 +812,358 @@ Extract and analyze:
                 $(this).hide();
             }
         });
+    }
+
+    /**
+     * Open dialog to add a manual memory
+     */
+    function openManualMemoryDialog() {
+        const dialogHtml = `
+            <div id="memory-manual-dialog" class="memory-range-dialog">
+                <div class="memory-range-content">
+                    <h3>Add Manual Memory</h3>
+                    <p>Create a custom memory entry for important facts or events.</p>
+                    
+                    <div class="manual-memory-form">
+                        <label>
+                            <strong>Summary</strong> (required)
+                            <textarea id="manual-summary" placeholder="Brief description of the event or fact..." rows="3"></textarea>
+                        </label>
+                        
+                        <label>
+                            <strong>Importance</strong> (0.0 - 1.0)
+                            <input type="range" id="manual-importance" min="0" max="1" step="0.05" value="0.7">
+                            <span id="manual-importance-value">0.7</span>
+                        </label>
+                        
+                        <label>
+                            <strong>Emotion/Tone</strong>
+                            <input type="text" id="manual-emotion" placeholder="e.g., happy, tense, revelatory" value="neutral">
+                        </label>
+                        
+                        <label>
+                            <strong>Keywords</strong> (comma-separated)
+                            <textarea id="manual-keywords" placeholder="e.g., first meeting, secret, character name" rows="2"></textarea>
+                        </label>
+                        
+                        <label>
+                            <strong>Continuity Note</strong> (optional)
+                            <textarea id="manual-continuity" placeholder="Important details to remember for future reference..." rows="2"></textarea>
+                        </label>
+                        
+                        <label>
+                            <strong>Relationship Impact</strong> (optional)
+                            <select id="manual-relationship-type">
+                                <option value="">None</option>
+                                <option value="romance">Romance</option>
+                                <option value="friendship">Friendship</option>
+                                <option value="trust">Trust</option>
+                                <option value="professional">Professional</option>
+                                <option value="family">Family</option>
+                                <option value="rivalry">Rivalry</option>
+                            </select>
+                            <select id="manual-relationship-change">
+                                <option value="neutral">No change</option>
+                                <option value="improved">Improved</option>
+                                <option value="worsened">Worsened</option>
+                            </select>
+                        </label>
+                    </div>
+                    
+                    <div class="range-buttons">
+                        <button id="manual-save-btn" class="menu_button">Save Memory</button>
+                        <button id="manual-cancel-btn" class="menu_button">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        $('#memory-manual-dialog').remove();
+        $('body').append(dialogHtml);
+        $('#memory-manual-dialog').fadeIn(200);
+        
+        // Update importance display
+        $('#manual-importance').on('input', function() {
+            $('#manual-importance-value').text($(this).val());
+        });
+        
+        // Save button
+        $('#manual-save-btn').on('click', function() {
+            const summary = $('#manual-summary').val().trim();
+            
+            if (!summary) {
+                showNotification('Summary is required');
+                return;
+            }
+            
+            const keywords = $('#manual-keywords').val()
+                .split(',')
+                .map(k => k.trim())
+                .filter(k => k.length > 0);
+            
+            const memoryData = {
+                summary: summary,
+                importance: parseFloat($('#manual-importance').val()),
+                emotion: $('#manual-emotion').val().trim() || 'neutral',
+                keywords: keywords.length > 0 ? keywords : ['manual'],
+                continuityNote: $('#manual-continuity').val().trim() || '',
+                timestamp: Date.now(),
+                source: 'manual',
+                messageIndex: -1 // Indicates manual entry
+            };
+            
+            // Add relationship if specified
+            const relType = $('#manual-relationship-type').val();
+            const relChange = $('#manual-relationship-change').val();
+            
+            if (relType && relChange !== 'neutral') {
+                memoryData.relationship = {
+                    type: relType,
+                    change: relChange
+                };
+            }
+            
+            addManualMemory(memoryData);
+            
+            $('#memory-manual-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+        });
+        
+        // Cancel button
+        $('#manual-cancel-btn').on('click', function() {
+            $('#memory-manual-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+        });
+    }
+
+    /**
+     * Add a manual memory to the tracker
+     */
+    async function addManualMemory(memoryData) {
+        const context = SillyTavern.getContext();
+        const chatMetadata = context.chatMetadata;
+        
+        if (!chatMetadata.memoryTracker) {
+            chatMetadata.memoryTracker = {
+                memories: [],
+                relationships: {},
+                timeline: [],
+                emotionalStates: {}
+            };
+        }
+        
+        // Add memory
+        chatMetadata.memoryTracker.memories.push(memoryData);
+        
+        // Update timeline
+        chatMetadata.memoryTracker.timeline.push({
+            timestamp: memoryData.timestamp,
+            messageIndex: -1,
+            summary: memoryData.summary,
+            importance: memoryData.importance
+        });
+        
+        // Update relationships if specified
+        if (memoryData.relationship) {
+            updateRelationship(
+                chatMetadata.memoryTracker.relationships,
+                memoryData.relationship
+            );
+        }
+        
+        // Update emotional states
+        if (memoryData.emotion && extensionSettings.useEmotionalContext) {
+            updateEmotionalState(
+                chatMetadata.memoryTracker.emotionalStates,
+                memoryData.emotion
+            );
+        }
+        
+        // Save metadata
+        await context.saveMetadata();
+        
+        showNotification(`Manual memory added: ${memoryData.summary.substring(0, 50)}...`);
+        
+        // Refresh UI if panel is open
+        if ($(`#${MEMORY_PANEL_ID}`).is(':visible')) {
+            renderMemories();
+        }
+    }
+
+    /**
+     * Open dialog to import from lorebook
+     */
+    function openLorebookImportDialog() {
+        const context = SillyTavern.getContext();
+        
+        // Get World Info entries
+        let worldInfo = [];
+        
+        try {
+            // Try to access world info from context
+            if (context.worldInfoData) {
+                worldInfo = context.worldInfoData.entries || [];
+            }
+        } catch (error) {
+            console.error('[Dynamic Memory Tracker] Error accessing world info:', error);
+        }
+        
+        if (worldInfo.length === 0) {
+            showNotification('No World Info/Lorebook entries found for this character or chat');
+            return;
+        }
+        
+        // Create dialog with lorebook entries
+        let entriesHtml = worldInfo.map((entry, index) => {
+            const content = entry.content || entry.description || '';
+            const keys = entry.key ? entry.key.join(', ') : (entry.keys || []).join(', ');
+            const comment = entry.comment || entry.title || `Entry ${index + 1}`;
+            
+            return `
+                <div class="lorebook-entry">
+                    <label>
+                        <input type="checkbox" class="lorebook-checkbox" data-index="${index}">
+                        <div class="lorebook-entry-content">
+                            <div class="lorebook-entry-title">${comment}</div>
+                            <div class="lorebook-entry-keys">Keys: ${keys || 'none'}</div>
+                            <div class="lorebook-entry-text">${content.substring(0, 150)}${content.length > 150 ? '...' : ''}</div>
+                        </div>
+                    </label>
+                </div>
+            `;
+        }).join('');
+        
+        const dialogHtml = `
+            <div id="memory-lorebook-dialog" class="memory-range-dialog">
+                <div class="memory-range-content" style="max-width: 800px;">
+                    <h3>Import from Lorebook</h3>
+                    <p>Select World Info entries to convert into memories:</p>
+                    
+                    <div class="lorebook-options">
+                        <label>
+                            <input type="checkbox" id="lorebook-select-all">
+                            <strong>Select All</strong>
+                        </label>
+                        <label>
+                            Default Importance: 
+                            <input type="range" id="lorebook-importance" min="0.3" max="1" step="0.05" value="0.7">
+                            <span id="lorebook-importance-value">0.7</span>
+                        </label>
+                    </div>
+                    
+                    <div class="lorebook-entries-list">
+                        ${entriesHtml}
+                    </div>
+                    
+                    <div class="range-buttons">
+                        <button id="lorebook-import-btn" class="menu_button">Import Selected</button>
+                        <button id="lorebook-cancel-btn" class="menu_button">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        $('#memory-lorebook-dialog').remove();
+        $('body').append(dialogHtml);
+        $('#memory-lorebook-dialog').fadeIn(200);
+        
+        // Update importance display
+        $('#lorebook-importance').on('input', function() {
+            $('#lorebook-importance-value').text($(this).val());
+        });
+        
+        // Select all toggle
+        $('#lorebook-select-all').on('change', function() {
+            $('.lorebook-checkbox').prop('checked', $(this).is(':checked'));
+        });
+        
+        // Import button
+        $('#lorebook-import-btn').on('click', function() {
+            const selectedIndices = [];
+            $('.lorebook-checkbox:checked').each(function() {
+                selectedIndices.push(parseInt($(this).data('index')));
+            });
+            
+            if (selectedIndices.length === 0) {
+                showNotification('No entries selected');
+                return;
+            }
+            
+            const importance = parseFloat($('#lorebook-importance').val());
+            importLorebookEntries(worldInfo, selectedIndices, importance);
+            
+            $('#memory-lorebook-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+        });
+        
+        // Cancel button
+        $('#lorebook-cancel-btn').on('click', function() {
+            $('#memory-lorebook-dialog').fadeOut(200, function() {
+                $(this).remove();
+            });
+        });
+    }
+
+    /**
+     * Import selected lorebook entries as memories
+     */
+    async function importLorebookEntries(worldInfo, selectedIndices, importance) {
+        const context = SillyTavern.getContext();
+        const chatMetadata = context.chatMetadata;
+        
+        if (!chatMetadata.memoryTracker) {
+            chatMetadata.memoryTracker = {
+                memories: [],
+                relationships: {},
+                timeline: [],
+                emotionalStates: {}
+            };
+        }
+        
+        let imported = 0;
+        
+        for (const index of selectedIndices) {
+            const entry = worldInfo[index];
+            const content = entry.content || entry.description || '';
+            const keys = entry.key ? entry.key : (entry.keys || []);
+            const comment = entry.comment || entry.title || `Lorebook Entry ${index + 1}`;
+            
+            // Create memory from lorebook entry
+            const memoryData = {
+                summary: `${comment}: ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}`,
+                importance: importance,
+                emotion: 'factual',
+                keywords: [...keys, 'lorebook', 'imported'],
+                continuityNote: `Imported from World Info: ${comment}`,
+                timestamp: Date.now(),
+                source: 'lorebook',
+                messageIndex: -1
+            };
+            
+            chatMetadata.memoryTracker.memories.push(memoryData);
+            
+            chatMetadata.memoryTracker.timeline.push({
+                timestamp: memoryData.timestamp,
+                messageIndex: -1,
+                summary: comment,
+                importance: importance
+            });
+            
+            imported++;
+        }
+        
+        // Save metadata
+        await context.saveMetadata();
+        
+        showNotification(`Imported ${imported} entries from lorebook`);
+        
+        // Refresh UI if panel is open
+        if ($(`#${MEMORY_PANEL_ID}`).is(':visible')) {
+            renderMemories();
+        }
     }
 
     /**
