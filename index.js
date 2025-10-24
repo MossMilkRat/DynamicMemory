@@ -1194,14 +1194,14 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
                 console.log('[Dynamic Memory Tracker] Method 3 debug:', {
                     isArray: Array.isArray(context.chatMetadata.world_info),
                     type: typeof context.chatMetadata.world_info,
-                    keys: Object.keys(context.chatMetadata.world_info || {}),
-                    hasEntries: 'entries' in (context.chatMetadata.world_info || {})
+                    value: context.chatMetadata.world_info
                 });
                 
+                // Only check for entries if it's an object (not a string)
                 if (Array.isArray(context.chatMetadata.world_info) && context.chatMetadata.world_info.length > 0) {
                     console.log('[Dynamic Memory Tracker] Method 3: chatMetadata.world_info -', context.chatMetadata.world_info.length, 'entries');
                     worldInfo = [...worldInfo, ...context.chatMetadata.world_info];
-                } else if (context.chatMetadata.world_info.entries && Array.isArray(context.chatMetadata.world_info.entries) && context.chatMetadata.world_info.entries.length > 0) {
+                } else if (typeof context.chatMetadata.world_info === 'object' && context.chatMetadata.world_info !== null && context.chatMetadata.world_info.entries && Array.isArray(context.chatMetadata.world_info.entries) && context.chatMetadata.world_info.entries.length > 0) {
                     console.log('[Dynamic Memory Tracker] Method 3: chatMetadata.world_info.entries -', context.chatMetadata.world_info.entries.length, 'entries');
                     worldInfo = [...worldInfo, ...context.chatMetadata.world_info.entries];
                 }
