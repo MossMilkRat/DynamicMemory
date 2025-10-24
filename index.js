@@ -1169,48 +1169,65 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
         let worldInfo = [];
         
         try {
+            // Check ALL methods and combine results
+            
             // Method 1: Try to get from world_info_data (newer ST versions)
-            if (context.world_info_data && Array.isArray(context.world_info_data)) {
-                worldInfo = context.world_info_data;
-                console.log('[Dynamic Memory Tracker] Method 1: world_info_data');
+            if (context.world_info_data && Array.isArray(context.world_info_data) && context.world_info_data.length > 0) {
+                console.log('[Dynamic Memory Tracker] Method 1: world_info_data -', context.world_info_data.length, 'entries');
+                worldInfo = [...worldInfo, ...context.world_info_data];
             }
+            
             // Method 2: Try worldInfoData (alternative property name)
-            else if (context.worldInfoData) {
-                if (Array.isArray(context.worldInfoData)) {
-                    worldInfo = context.worldInfoData;
-                } else if (Array.isArray(context.worldInfoData.entries)) {
-                    worldInfo = context.worldInfoData.entries;
+            if (context.worldInfoData) {
+                if (Array.isArray(context.worldInfoData) && context.worldInfoData.length > 0) {
+                    console.log('[Dynamic Memory Tracker] Method 2: worldInfoData -', context.worldInfoData.length, 'entries');
+                    worldInfo = [...worldInfo, ...context.worldInfoData];
+                } else if (context.worldInfoData.entries && Array.isArray(context.worldInfoData.entries) && context.worldInfoData.entries.length > 0) {
+                    console.log('[Dynamic Memory Tracker] Method 2: worldInfoData.entries -', context.worldInfoData.entries.length, 'entries');
+                    worldInfo = [...worldInfo, ...context.worldInfoData.entries];
                 }
-                console.log('[Dynamic Memory Tracker] Method 2: worldInfoData');
             }
+            
             // Method 3: Try to get from chat metadata
-            else if (context.chatMetadata && context.chatMetadata.world_info) {
-                if (Array.isArray(context.chatMetadata.world_info)) {
-                    worldInfo = context.chatMetadata.world_info;
-                } else if (Array.isArray(context.chatMetadata.world_info.entries)) {
-                    worldInfo = context.chatMetadata.world_info.entries;
+            if (context.chatMetadata && context.chatMetadata.world_info) {
+                // Debug: log structure
+                console.log('[Dynamic Memory Tracker] Method 3 debug:', {
+                    isArray: Array.isArray(context.chatMetadata.world_info),
+                    type: typeof context.chatMetadata.world_info,
+                    keys: Object.keys(context.chatMetadata.world_info || {}),
+                    hasEntries: 'entries' in (context.chatMetadata.world_info || {})
+                });
+                
+                if (Array.isArray(context.chatMetadata.world_info) && context.chatMetadata.world_info.length > 0) {
+                    console.log('[Dynamic Memory Tracker] Method 3: chatMetadata.world_info -', context.chatMetadata.world_info.length, 'entries');
+                    worldInfo = [...worldInfo, ...context.chatMetadata.world_info];
+                } else if (context.chatMetadata.world_info.entries && Array.isArray(context.chatMetadata.world_info.entries) && context.chatMetadata.world_info.entries.length > 0) {
+                    console.log('[Dynamic Memory Tracker] Method 3: chatMetadata.world_info.entries -', context.chatMetadata.world_info.entries.length, 'entries');
+                    worldInfo = [...worldInfo, ...context.chatMetadata.world_info.entries];
                 }
-                console.log('[Dynamic Memory Tracker] Method 3: chatMetadata.world_info');
             }
+            
             // Method 4: Try to access through characters
-            else if (context.characters && context.characters[context.characterId]) {
+            if (context.characters && context.characters[context.characterId]) {
                 const char = context.characters[context.characterId];
-                if (char.data && char.data.character_book && Array.isArray(char.data.character_book.entries)) {
-                    worldInfo = char.data.character_book.entries;
-                    console.log('[Dynamic Memory Tracker] Method 4: character_book.entries');
+                if (char.data && char.data.character_book && Array.isArray(char.data.character_book.entries) && char.data.character_book.entries.length > 0) {
+                    console.log('[Dynamic Memory Tracker] Method 4: character_book.entries -', char.data.character_book.entries.length, 'entries');
+                    worldInfo = [...worldInfo, ...char.data.character_book.entries];
                 }
             }
+            
             // Method 5: Try direct access to world_info
-            else if (window.world_info && Array.isArray(window.world_info.entries)) {
-                worldInfo = window.world_info.entries;
-                console.log('[Dynamic Memory Tracker] Method 5: window.world_info.entries');
+            if (window.world_info && window.world_info.entries && Array.isArray(window.world_info.entries) && window.world_info.entries.length > 0) {
+                console.log('[Dynamic Memory Tracker] Method 5: window.world_info.entries -', window.world_info.entries.length, 'entries');
+                worldInfo = [...worldInfo, ...window.world_info.entries];
             }
+            
             // Method 6: Try getWorldInfoSettings
-            else if (typeof SillyTavern.getWorldInfoSettings === 'function') {
+            if (typeof SillyTavern.getWorldInfoSettings === 'function') {
                 const wiSettings = SillyTavern.getWorldInfoSettings();
-                if (wiSettings && Array.isArray(wiSettings.entries)) {
-                    worldInfo = wiSettings.entries;
-                    console.log('[Dynamic Memory Tracker] Method 6: getWorldInfoSettings');
+                if (wiSettings && wiSettings.entries && Array.isArray(wiSettings.entries) && wiSettings.entries.length > 0) {
+                    console.log('[Dynamic Memory Tracker] Method 6: getWorldInfoSettings -', wiSettings.entries.length, 'entries');
+                    worldInfo = [...worldInfo, ...wiSettings.entries];
                 }
             }
             
@@ -1220,7 +1237,7 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
                 worldInfo = [];
             }
             
-            console.log('[Dynamic Memory Tracker] Found', worldInfo.length, 'World Info entries');
+            console.log('[Dynamic Memory Tracker] Total entries found before deduplication:', worldInfo.length);
             
         } catch (error) {
             console.error('[Dynamic Memory Tracker] Error accessing world info:', error);
