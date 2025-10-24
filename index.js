@@ -1342,9 +1342,14 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
                             <strong>Select All</strong>
                         </label>
                         <label>
+                            <input type="checkbox" id="lorebook-analyze" checked>
+                            <strong>AI Analyze</strong> (extract importance, emotions, keywords)
+                        </label>
+                        <label>
                             Default Importance: 
                             <input type="range" id="lorebook-importance" min="0.3" max="1" step="0.05" value="0.7">
                             <span id="lorebook-importance-value">0.7</span>
+                            <small>(only used if AI Analyze is off)</small>
                         </label>
                     </div>
                     
@@ -1394,13 +1399,14 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
             }
             
             const importance = parseFloat($('#lorebook-importance').val());
-            console.log('[Dynamic Memory Tracker] Importing with importance:', importance);
+            const useAI = $('#lorebook-analyze').is(':checked');
+            console.log('[Dynamic Memory Tracker] Importing with importance:', importance, 'AI analysis:', useAI);
             
             $('#memory-lorebook-dialog').fadeOut(200, function() {
                 $(this).remove();
             });
             
-            importLorebookEntries(worldInfo, selectedIndices, importance);
+            importLorebookEntries(worldInfo, selectedIndices, importance, useAI);
         });
         
         // Cancel button
@@ -1415,7 +1421,7 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
     /**
      * Import selected lorebook entries as memories
      */
-    async function importLorebookEntries(worldInfo, selectedIndices, importance) {
+    async function importLorebookEntries(worldInfo, selectedIndices, importance, useAI = false) {
         const context = SillyTavern.getContext();
         const chatMetadata = context.chatMetadata;
         
@@ -1430,6 +1436,12 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
         }
         
         let imported = 0;
+        let analyzed = 0;
+        
+        // Show progress if using AI
+        if (useAI) {
+            showNotification(`Analyzing ${selectedIndices.length} lorebook entries with AI...\nThis may take a few minutes.`);
+        }
         
         for (const index of selectedIndices) {
             const entry = worldInfo[index];
@@ -1451,41 +1463,121 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
             
             const comment = entry.comment || entry.title || entry.name || `Lorebook Entry ${index + 1}`;
             
-            // Create memory from lorebook entry
-            const memoryData = {
-                summary: content.length > 200 
-                    ? `${comment}: ${content.substring(0, 200)}...`
-                    : `${comment}: ${content}`,
-                importance: importance,
-                emotion: 'factual',
-                keywords: [...keys, 'lorebook', 'imported'].filter(k => k && k.length > 0),
-                continuityNote: `Imported from World Info: ${comment}`,
-                timestamp: Date.now(),
-                source: 'lorebook',
-                messageIndex: -1
-            };
+            let memoryData;
             
+            if (useAI && content.length > 0) {
+                // Use AI to analyze the lorebook entry
+                console.log(`[Dynamic Memory Tracker] AI analyzing: ${comment}`);
+                
+                const analysisPrompt = `Analyze this lorebook/world info entry and extract memory information.
+
+Title: ${comment}
+Content: ${content}
+
+Return ONLY a JSON object (no markdown, no explanation) with this structure:
+{
+  "summary": "concise summary of the information",
+  "importance": 0.7,
+  "emotion": "factual/neutral/mysterious/etc",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "continuityNote": "why this is important to remember"
+}`;
+
+                try {
+                    const result = await context.generateQuietPrompt({
+                        quietPrompt: analysisPrompt,
+                        quietToLoud: true
+                    });
+
+                    if (result) {
+                        // Clean and parse result
+                        let cleanResult = result.trim();
+                        cleanResult = cleanResult.replace(/```json\n?/g, '');
+                        cleanResult = cleanResult.replace(/```\n?/g, '');
+                        cleanResult = cleanResult.trim();
+                        
+                        const jsonMatch = cleanResult.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            cleanResult = jsonMatch[0];
+                        }
+                        
+                        const aiAnalysis = JSON.parse(cleanResult);
+                        
+                        memoryData = {
+                            summary: aiAnalysis.summary || `${comment}: ${content.substring(0, 200)}`,
+                            importance: typeof aiAnalysis.importance === 'number' ? aiAnalysis.importance : importance,
+                            emotion: aiAnalysis.emotion || 'factual',
+                            keywords: Array.isArray(aiAnalysis.keywords) ? [...aiAnalysis.keywords, ...keys, 'lorebook', 'imported'] : [...keys, 'lorebook', 'imported'],
+                            continuityNote: aiAnalysis.continuityNote || `Imported from World Info: ${comment}`,
+                            timestamp: Date.now(),
+                            source: 'lorebook',
+                            messageIndex: -1
+                        };
+                        
+                        analyzed++;
+                        console.log(`[Dynamic Memory Tracker] AI analysis successful for: ${comment}`);
+                    } else {
+                        throw new Error('No AI response');
+                    }
+                } catch (error) {
+                    console.warn(`[Dynamic Memory Tracker] AI analysis failed for "${comment}", using basic import:`, error);
+                    // Fallback to basic import
+                    memoryData = createBasicLorebookMemory(content, comment, keys, importance);
+                }
+            } else {
+                // Basic import without AI
+                memoryData = createBasicLorebookMemory(content, comment, keys, importance);
+            }
+            
+            // Add memory
             chatMetadata.memoryTracker.memories.push(memoryData);
             
             chatMetadata.memoryTracker.timeline.push({
                 timestamp: memoryData.timestamp,
                 messageIndex: -1,
                 summary: comment,
-                importance: importance
+                importance: memoryData.importance
             });
             
             imported++;
+            
+            // Small delay between AI calls to avoid rate limiting
+            if (useAI && index < selectedIndices.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
         }
         
         // Save metadata
         await context.saveMetadata();
         
-        showNotification(`Imported ${imported} ${imported === 1 ? 'entry' : 'entries'} from lorebook`);
+        const message = useAI 
+            ? `Imported ${imported} ${imported === 1 ? 'entry' : 'entries'} from lorebook\n(${analyzed} analyzed with AI, ${imported - analyzed} basic import)`
+            : `Imported ${imported} ${imported === 1 ? 'entry' : 'entries'} from lorebook`;
+        
+        showNotification(message);
         
         // Refresh UI if panel is open
         if ($(`#${MEMORY_PANEL_ID}`).is(':visible')) {
             renderMemories();
         }
+    }
+
+    /**
+     * Create basic lorebook memory without AI analysis
+     */
+    function createBasicLorebookMemory(content, comment, keys, importance) {
+        return {
+            summary: content.length > 200 
+                ? `${comment}: ${content.substring(0, 200)}...`
+                : `${comment}: ${content}`,
+            importance: importance,
+            emotion: 'factual',
+            keywords: [...keys, 'lorebook', 'imported'].filter(k => k && k.length > 0),
+            continuityNote: `Imported from World Info: ${comment}`,
+            timestamp: Date.now(),
+            source: 'lorebook',
+            messageIndex: -1
+        };
     }
 
     /**
