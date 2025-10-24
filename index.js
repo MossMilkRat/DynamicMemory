@@ -1254,37 +1254,49 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
         console.log('[Dynamic Memory Tracker] Total unique entries:', worldInfo.length);
         
         // Create dialog with lorebook entries
-        let entriesHtml = worldInfo.map((entry, index) => {
-            // Handle different entry formats
-            const content = entry.content || entry.description || entry.text || '';
-            
-            // Handle different key formats
-            let keys = '';
-            if (Array.isArray(entry.key)) {
-                keys = entry.key.join(', ');
-            } else if (Array.isArray(entry.keys)) {
-                keys = entry.keys.join(', ');
-            } else if (typeof entry.key === 'string') {
-                keys = entry.key;
-            } else if (typeof entry.keys === 'string') {
-                keys = entry.keys;
-            }
-            
-            const comment = entry.comment || entry.title || entry.name || `Entry ${index + 1}`;
-            
-            return `
-                <div class="lorebook-entry">
-                    <label>
-                        <input type="checkbox" class="lorebook-checkbox" data-index="${index}">
-                        <div class="lorebook-entry-content">
-                            <div class="lorebook-entry-title">${comment}</div>
-                            <div class="lorebook-entry-keys">Keys: ${keys || 'none'}</div>
-                            <div class="lorebook-entry-text">${content.substring(0, 150)}${content.length > 150 ? '...' : ''}</div>
-                        </div>
-                    </label>
-                </div>
-            `;
-        }).join('');
+        let entriesHtml = '';
+        try {
+            entriesHtml = worldInfo.map((entry, index) => {
+                // Handle different entry formats
+                const content = entry.content || entry.description || entry.text || '';
+                
+                // Handle different key formats
+                let keys = '';
+                if (Array.isArray(entry.key)) {
+                    keys = entry.key.join(', ');
+                } else if (Array.isArray(entry.keys)) {
+                    keys = entry.keys.join(', ');
+                } else if (typeof entry.key === 'string') {
+                    keys = entry.key;
+                } else if (typeof entry.keys === 'string') {
+                    keys = entry.keys;
+                }
+                
+                const comment = entry.comment || entry.title || entry.name || `Entry ${index + 1}`;
+                
+                // Escape HTML to prevent issues
+                const safeComment = $('<div>').text(comment).html();
+                const safeKeys = $('<div>').text(keys || 'none').html();
+                const safeContent = $('<div>').text(content.substring(0, 150)).html();
+                
+                return `
+                    <div class="lorebook-entry">
+                        <label>
+                            <input type="checkbox" class="lorebook-checkbox" data-index="${index}">
+                            <div class="lorebook-entry-content">
+                                <div class="lorebook-entry-title">${safeComment}</div>
+                                <div class="lorebook-entry-keys">Keys: ${safeKeys}</div>
+                                <div class="lorebook-entry-text">${safeContent}${content.length > 150 ? '...' : ''}</div>
+                            </div>
+                        </label>
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('[Dynamic Memory Tracker] Error creating entry HTML:', error);
+            showNotification('Error displaying entries. Check console for details.');
+            return;
+        }
         
         const dialogHtml = `
             <div id="memory-lorebook-dialog" class="memory-range-dialog">
@@ -1316,9 +1328,12 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
             </div>
         `;
         
+        console.log('[Dynamic Memory Tracker] Creating lorebook dialog');
         $('#memory-lorebook-dialog').remove();
         $('body').append(dialogHtml);
+        console.log('[Dynamic Memory Tracker] Dialog appended to body');
         $('#memory-lorebook-dialog').fadeIn(200);
+        console.log('[Dynamic Memory Tracker] Dialog should be visible');
         
         // Update importance display
         $('#lorebook-importance').on('input', function() {
@@ -1327,15 +1342,19 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
         
         // Select all toggle
         $('#lorebook-select-all').on('change', function() {
+            console.log('[Dynamic Memory Tracker] Select all toggled');
             $('.lorebook-checkbox').prop('checked', $(this).is(':checked'));
         });
         
         // Import button
         $('#lorebook-import-btn').on('click', function() {
+            console.log('[Dynamic Memory Tracker] Import button clicked');
             const selectedIndices = [];
             $('.lorebook-checkbox:checked').each(function() {
                 selectedIndices.push(parseInt($(this).data('index')));
             });
+            
+            console.log('[Dynamic Memory Tracker] Selected indices:', selectedIndices);
             
             if (selectedIndices.length === 0) {
                 showNotification('No entries selected');
@@ -1343,15 +1362,18 @@ Return ONLY a JSON object (no markdown formatting, no code blocks, no explanatio
             }
             
             const importance = parseFloat($('#lorebook-importance').val());
-            importLorebookEntries(worldInfo, selectedIndices, importance);
+            console.log('[Dynamic Memory Tracker] Importing with importance:', importance);
             
             $('#memory-lorebook-dialog').fadeOut(200, function() {
                 $(this).remove();
             });
+            
+            importLorebookEntries(worldInfo, selectedIndices, importance);
         });
         
         // Cancel button
         $('#lorebook-cancel-btn').on('click', function() {
+            console.log('[Dynamic Memory Tracker] Cancel button clicked');
             $('#memory-lorebook-dialog').fadeOut(200, function() {
                 $(this).remove();
             });
